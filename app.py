@@ -57,26 +57,24 @@ def upload_file_to_drive(drive_service, parent_id, file_name, file_bytes, mime_t
         'parents': [parent_id]
     }
     
-    # Membagi upload menjadi potongan/chunk kecil (1MB) agar tidak terjadi 'Broken pipe' saat upload file besar
+    # Pointer reset & Direct Upload untuk mencegah [Errno 32] Broken Pipe
+    fh = io.BytesIO(file_bytes)
+    fh.seek(0)
+    
     media = MediaIoBaseUpload(
-        io.BytesIO(file_bytes),
+        fh,
         mimetype=mime_type,
-        chunksize=1024*1024,
-        resumable=True
+        resumable=False
     )
     
-    request = drive_service.files().create(
+    uploaded = drive_service.files().create(
         body=file_metadata,
         media_body=media,
         fields='id, webViewLink',
         supportsAllDrives=True
-    )
+    ).execute()
     
-    response = None
-    while response is None:
-        status, response = request.next_chunk()
-        
-    return response.get('webViewLink')
+    return uploaded.get('webViewLink')
 
 # ---------------------------------------------------------
 # FUNGSI GENERATE PDF CSMS
