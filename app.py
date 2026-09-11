@@ -1,12 +1,9 @@
 import streamlit as st
 import pandas as pd
-import json
 import datetime
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
 import io
 import gspread
+from google.oauth2.service_account import Credentials
 
 # Modul ReportLab untuk Generate PDF
 from reportlab.lib.pagesizes import A4
@@ -23,79 +20,19 @@ st.caption("Contractor Safety Management System - FM/QHE/0127 rev. 1")
 st.divider()
 
 # ---------------------------------------------------------
-# FUNGSI INTEGRASI GOOGLE DRIVE & SHEETS
+# FUNGSI INTEGRASI GOOGLE SHEETS
 # ---------------------------------------------------------
-SCOPES = [
-    'https://www.googleapis.com/auth/drive',
-    'https://www.googleapis.com/auth/spreadsheets'
-]
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 @st.cache_resource
-def get_gservices():
+def get_gsheets():
     info = dict(st.secrets["gcp_service_account"])
     creds = Credentials.from_service_account_info(info, scopes=SCOPES)
-    drive_service = build('drive', 'v3', credentials=creds)
     gc = gspread.authorize(creds)
-    return drive_service, gc
-
-def create_subfolder(drive_service, parent_id, folder_name):
-    file_metadata = {
-        'name': folder_name,
-        'mimeType': 'application/vnd.google-apps.folder',
-        'parents': [parent_id]
-    }
-    file = drive_service.files().create(
-        body=file_metadata, 
-        fields='id',
-        supportsAllDrives=True
-    ).execute()
-    return file.get('id')
-
-def upload_file_to_drive(drive_service, parent_id, file_name, file_bytes, mime_type):
-    file_metadata = {
-        'name': file_name,
-        'parents': [parent_id]
-    }
-    
-    # Chunking 1MB (1024*1024) dan Resumable Upload
-    media = MediaIoBaseUpload(
-        io.BytesIO(file_bytes),
-        mimetype=mime_type,
-        chunksize=1024*1024,
-        resumable=True
-    )
-    
-    request = drive_service.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields='id, webViewLink',
-        supportsAllDrives=True
-    )
-    
-    response = None
-    while response is None:
-        status, response = request.next_chunk()
-        
-    file_id = response.get('id')
-    
-    # Pindahkan izin / buat file dapat diakses publik via link jika di folder biasa
-    try:
-        permission = {
-            'type': 'anyone',
-            'role': 'reader'
-        }
-        drive_service.permissions().create(
-            fileId=file_id,
-            body=permission,
-            supportsAllDrives=True
-        ).execute()
-    except Exception:
-        pass
-
-    return response.get('webViewLink')
+    return gc
 
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS
+# FUNGSI GENERATE PDF CSMS (DI MEMORI)
 # ---------------------------------------------------------
 def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, summary_list):
     buffer = io.BytesIO()
@@ -110,20 +47,10 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
-        'TitleStyle',
-        parent=styles['Heading1'],
-        fontSize=14,
-        leading=18,
-        alignment=1,
-        textColor=colors.HexColor('#1E3A8A')
+        'TitleStyle', parent=styles['Heading1'], fontSize=14, leading=18, alignment=1, textColor=colors.HexColor('#1E3A8A')
     )
     subtitle_style = ParagraphStyle(
-        'SubTitleStyle',
-        parent=styles['Normal'],
-        fontSize=9,
-        leading=11,
-        alignment=1,
-        textColor=colors.gray
+        'SubTitleStyle', parent=styles['Normal'], fontSize=9, leading=11, alignment=1, textColor=colors.gray
     )
     bold_body = ParagraphStyle('BoldBody', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
     normal_body = ParagraphStyle('NormalBody', parent=styles['Normal'], fontSize=8, leading=10)
@@ -159,16 +86,15 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     
     # Tabel Jawaban CSMS
     table_data = [
-        [Paragraph("<b>No</b>", bold_body), Paragraph("<b>Pertanyaan Evaluasi CSMS</b>", bold_body), Paragraph("<b>Jawaban</b>", bold_body), Paragraph("<b>Status Lampiran</b>", bold_body)]
+        [Paragraph("<b>No</b>", bold_body), Paragraph("<b>Pertanyaan Evaluasi CSMS</b>", bold_body), Paragraph("<b>Jawaban</b>", bold_body), Paragraph("<b>Keterangan Lampiran</b>", bold_body)]
     ]
     
     for item in summary_list:
-        status_lampiran = "Ada Dokumen" if item["Lampiran"] != "N/A" and item["Lampiran"] != "-" else item["Lampiran"]
         table_data.append([
             Paragraph(item["No"], normal_body),
             Paragraph(f"<b>[{item['Kategori']}]</b><br/>{item['Pertanyaan']}", normal_body),
             Paragraph(item["Jawaban"], normal_body),
-            Paragraph(status_lampiran, normal_body)
+            Paragraph(item["Lampiran"], normal_body)
         ])
         
     t_questions = Table(table_data, colWidths=[30, 320, 60, 110])
@@ -276,7 +202,7 @@ sections = [
 ]
 
 responses = {}
-file_objects = {}
+file_status = {}
 total_questions = 0
 
 for section in sections:
@@ -294,11 +220,11 @@ for section in sections:
             if q.get('has_file'):
                 if ans == "Ya":
                     up_file = st.file_uploader(f"📎 {q.get('file_label')}", key=f"file_{q['id']}")
-                    file_objects[q['id']] = up_file
+                    file_status[q['id']] = f"Ada ({up_file.name})" if up_file else "Ada (Belum diunggah)"
                 else:
-                    file_objects[q['id']] = None
+                    file_status[q['id']] = "Tidak Ada (N/A)"
             else:
-                file_objects[q['id']] = None
+                file_status[q['id']] = "-"
     st.markdown("---")
 
 # ---------------------------------------------------------
@@ -308,83 +234,46 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     if not nama_vendor:
         st.error("⚠️ Harap isi Nama Perusahaan terlebih dahulu!")
     else:
-        with st.spinner("Mengunggah dokumen, menghasilkan PDF ringkasan, dan menyimpan data..."):
+        with st.spinner("Menghitung skor, mencetak PDF, dan menyimpan data..."):
             try:
-                drive_service, gc = get_gservices()
-                upload_parent_id = st.secrets["google_drive"]["folder_upload_id"]
+                gc = get_gsheets()
                 spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
 
-                # 1. Gunakan folder induk secara langsung jika pembuatan subfolder memicu batas kuota
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                clean_vendor_name = "".join(c for c in nama_vendor if c.isalnum() or c in (' ', '_', '-')).rstrip()
-                
-                try:
-                    vendor_folder_name = f"{clean_vendor_name}_{timestamp}"
-                    target_folder_id = create_subfolder(drive_service, upload_parent_id, vendor_folder_name)
-                except Exception:
-                    # Fallback jika pembuatan subfolder ditolak kuota, upload langsung ke folder utama
-                    target_folder_id = upload_parent_id
+                # 1. Hitung Skor CSMS
+                total_ya = sum(1 for v in responses.values() if v == "Ya")
+                score_pct = (total_ya / total_questions) * 100
 
-                # 2. Upload Lampiran Vendor
-                attachment_links = {}
+                # 2. Susun Ringkasan Data
                 summary_list = []
-                
                 for section in sections:
                     for q in section['questions']:
                         q_id = q['id']
-                        f_obj = file_objects.get(q_id)
-                        
-                        if f_obj is not None:
-                            file_ext = f_obj.name.split('.')[-1]
-                            dest_filename = f"{q_id}_{clean_vendor_name}.{file_ext}"
-                            link = upload_file_to_drive(
-                                drive_service,
-                                target_folder_id,
-                                dest_filename,
-                                f_obj.getvalue(),
-                                f_obj.type
-                            )
-                            attachment_links[q_id] = link
-                        else:
-                            attachment_links[q_id] = "N/A"
-                            
                         summary_list.append({
                             "Kategori": section['kategori'],
                             "No": q_id,
                             "Pertanyaan": q['text'],
                             "Jawaban": responses[q_id],
-                            "Lampiran": attachment_links[q_id]
+                            "Lampiran": file_status[q_id]
                         })
 
-                # 3. Hitung Skor CSMS
-                total_ya = sum(1 for v in responses.values() if v == "Ya")
-                score_pct = (total_ya / total_questions) * 100
-
-                # 4. Generate & Upload PDF Ringkasan
+                # 3. Generate PDF Ringkasan CSMS (Di Memori)
+                clean_vendor_name = "".join(c for c in nama_vendor if c.isalnum() or c in (' ', '_', '-')).rstrip()
                 pdf_bytes = generate_csms_pdf(
                     nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, summary_list
                 )
-                
                 pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
-                pdf_drive_link = upload_file_to_drive(
-                    drive_service,
-                    target_folder_id,
-                    pdf_filename,
-                    pdf_bytes,
-                    "application/pdf"
-                )
 
-                # 5. Simpan Rekapitulasi ke Google Sheets
+                # 4. Simpan Rekapitulasi Jawaban ke Google Sheets
                 sh = gc.open_by_key(spreadsheet_id)
                 worksheet = sh.sheet1
                 
                 if len(worksheet.get_all_values()) == 0:
-                    headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab", "Kontak", "Skor (%)", "Link PDF Ringkasan"]
+                    headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab", "Kontak", "Skor (%)"]
                     for sec in sections:
                         for q in sec['questions']:
                             headers.append(f"[{q['id']}] Jawaban")
                             if q.get('has_file'):
-                                headers.append(f"[{q['id']}] Link Lampiran")
+                                headers.append(f"[{q['id']}] Status Lampiran")
                     worksheet.append_row(headers)
 
                 row_data = [
@@ -393,8 +282,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                     str(tgl_update),
                     nama_pj,
                     kontak_vendor,
-                    f"{score_pct:.1f}%",
-                    pdf_drive_link
+                    f"{score_pct:.1f}%"
                 ]
                 
                 for sec in sections:
@@ -402,12 +290,12 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                         q_id = q['id']
                         row_data.append(responses[q_id])
                         if q.get('has_file'):
-                            row_data.append(attachment_links[q_id])
+                            row_data.append(file_status[q_id])
 
                 worksheet.append_row(row_data)
 
-                # 6. Tampilkan Konfirmasi & Tombol Unduh PDF
-                st.success(f"✅ Formulir CSMS **{nama_vendor}** berhasil dikirim & disimpan!")
+                # 5. Tampilkan Konfirmasi & Tombol Unduh PDF
+                st.success(f"✅ Formulir CSMS untuk **{nama_vendor}** berhasil dikirim & disimpan!")
                 st.balloons()
                 
                 col_m1, col_m2 = st.columns(2)
