@@ -8,6 +8,12 @@ from googleapiclient.http import MediaIoBaseUpload
 import io
 import gspread
 
+# Modul ReportLab untuk Generate PDF
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
 # ---------------------------------------------------------
 # KONFIGURASI HALAMAN
 # ---------------------------------------------------------
@@ -53,6 +59,105 @@ def upload_file_to_drive(drive_service, parent_id, file_name, file_bytes, mime_t
         fields='id, webViewLink'
     ).execute()
     return uploaded.get('webViewLink')
+
+# ---------------------------------------------------------
+# FUNGSI GENERATE PDF CSMS
+# ---------------------------------------------------------
+def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, summary_list):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36
+    )
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'TitleStyle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        leading=20,
+        alignment=1, # Center
+        textColor=colors.HexColor('#1E3A8A')
+    )
+    subtitle_style = ParagraphStyle(
+        'SubTitleStyle',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=12,
+        alignment=1,
+        textColor=colors.gray
+    )
+    bold_body = ParagraphStyle('BoldBody', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, leading=11)
+    normal_body = ParagraphStyle('NormalBody', parent=styles['Normal'], fontSize=8, leading=10)
+    
+    elements = []
+    
+    # Header Dokumen
+    elements.append(Paragraph("HASIL EVALUASI PRAKUALIFIKASI KONTRAKTOR (CSMS)", title_style))
+    elements.append(Paragraph("Contractor Safety Management System - Form Ref: FM/QHE/0127 rev. 1", subtitle_style))
+    elements.append(Spacer(1, 15))
+    elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=15))
+    
+    # Tabel Informasi Vendor
+    info_data = [
+        [Paragraph("<b>Nama Vendor/Supplier</b>", normal_body), Paragraph(f": {nama_vendor}", normal_body),
+         Paragraph("<b>Tanggal Pengisian</b>", normal_body), Paragraph(f": {tgl_update}", normal_body)],
+        [Paragraph("<b>Penanggung Jawab K3</b>", normal_body), Paragraph(f": {nama_pj}", normal_body),
+         Paragraph("<b>Kontak/Email</b>", normal_body), Paragraph(f": {kontak_vendor}", normal_body)],
+        [Paragraph("<b>Skor Kepatuhan CSMS</b>", normal_body), Paragraph(f": <b>{score_pct:.1f}%</b>", normal_body),
+         Paragraph("<b>Status Pengajuan</b>", normal_body), Paragraph(": TERSIMPAN", normal_body)]
+    ]
+    
+    t_info = Table(info_data, colWidths=[120, 150, 110, 140])
+    t_info.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F3F4F6')),
+        ('PADDING', (0,0), (-1,-1), 6),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB'))
+    ]))
+    elements.append(t_info)
+    elements.append(Spacer(1, 15))
+    
+    # Tabel Jawaban CSMS
+    table_data = [
+        [Paragraph("<b>No</b>", bold_body), Paragraph("<b>Pertanyaan Evaluasi CSMS</b>", bold_body), Paragraph("<b>Jawaban</b>", bold_body), Paragraph("<b>Status Lampiran</b>", bold_body)]
+    ]
+    
+    for item in summary_list:
+        status_lampiran = "Ada Dokumen" if item["Lampiran"] != "N/A" and item["Lampiran"] != "-" else item["Lampiran"]
+        table_data.append([
+            Paragraph(item["No"], normal_body),
+            Paragraph(f"<b>[{item['Kategori']}]</b><br/>{item['Pertanyaan']}", normal_body),
+            Paragraph(item["Jawaban"], normal_body),
+            Paragraph(status_lampiran, normal_body)
+        ])
+        
+    t_questions = Table(table_data, colWidths=[35, 315, 60, 110])
+    t_questions.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('PADDING', (0,0), (-1,-1), 5),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#9CA3AF')),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F9FAFB')])
+    ]))
+    
+    # Ubah warna teks header tabel
+    for col in range(len(table_data[0])):
+        table_data[0][col].style.textColor = colors.white
+        
+    elements.append(t_questions)
+    
+    # Build PDF
+    doc.build(elements)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
 
 # ---------------------------------------------------------
 # INPUT IDENTITAS VENDOR
@@ -174,7 +279,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     if not nama_vendor:
         st.error("⚠️ Harap isi Nama Perusahaan terlebih dahulu!")
     else:
-        with st.spinner("Mengunggah dokumen ke Google Drive & Menyimpan data ke Google Sheets..."):
+        with st.spinner("Mengunggah dokumen, menghasilkan PDF ringkasan, dan menyimpan data..."):
             try:
                 drive_service, gc = get_gservices()
                 upload_parent_id = st.secrets["google_drive"]["folder_upload_id"]
@@ -186,34 +291,62 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 vendor_folder_name = f"{clean_vendor_name}_{timestamp}"
                 vendor_folder_id = create_subfolder(drive_service, upload_parent_id, vendor_folder_name)
 
-                # 2. Upload Lampiran ke Folder Vendor
+                # 2. Upload Lampiran Vendor
                 attachment_links = {}
-                for q_id, f_obj in file_objects.items():
-                    if f_obj is not None:
-                        file_ext = f_obj.name.split('.')[-1]
-                        dest_filename = f"{q_id}_{clean_vendor_name}.{file_ext}"
-                        link = upload_file_to_drive(
-                            drive_service,
-                            vendor_folder_id,
-                            dest_filename,
-                            f_obj.getvalue(),
-                            f_obj.type
-                        )
-                        attachment_links[q_id] = link
-                    else:
-                        attachment_links[q_id] = "N/A"
+                summary_list = []
+                
+                for section in sections:
+                    for q in section['questions']:
+                        q_id = q['id']
+                        f_obj = file_objects.get(q_id)
+                        
+                        if f_obj is not None:
+                            file_ext = f_obj.name.split('.')[-1]
+                            dest_filename = f"{q_id}_{clean_vendor_name}.{file_ext}"
+                            link = upload_file_to_drive(
+                                drive_service,
+                                vendor_folder_id,
+                                dest_filename,
+                                f_obj.getvalue(),
+                                f_obj.type
+                            )
+                            attachment_links[q_id] = link
+                        else:
+                            attachment_links[q_id] = "N/A"
+                            
+                        summary_list.append({
+                            "Kategori": section['kategori'],
+                            "No": q_id,
+                            "Pertanyaan": q['text'],
+                            "Jawaban": responses[q_id],
+                            "Lampiran": attachment_links[q_id]
+                        })
 
-                # 3. Hitung Skor
+                # 3. Hitung Skor CSMS
                 total_ya = sum(1 for v in responses.values() if v == "Ya")
                 score_pct = (total_ya / total_questions) * 100
 
-                # 4. Simpan Rekapitulasi ke Google Sheets
+                # 4. Generate Dokumen PDF
+                pdf_bytes = generate_csms_pdf(
+                    nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, summary_list
+                )
+                
+                # Upload PDF ke Google Drive Vendor
+                pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
+                pdf_drive_link = upload_file_to_drive(
+                    drive_service,
+                    vendor_folder_id,
+                    pdf_filename,
+                    pdf_bytes,
+                    "application/pdf"
+                )
+
+                # 5. Simpan Rekapitulasi ke Google Sheets
                 sh = gc.open_by_key(spreadsheet_id)
                 worksheet = sh.sheet1
                 
-                # Buat Header jika sheet masih kosong
                 if len(worksheet.get_all_values()) == 0:
-                    headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab", "Kontak", "Skor (%)"]
+                    headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab", "Kontak", "Skor (%)", "Link PDF Ringkasan"]
                     for sec in sections:
                         for q in sec['questions']:
                             headers.append(f"[{q['id']}] Jawaban")
@@ -221,14 +354,14 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                                 headers.append(f"[{q['id']}] Link Lampiran")
                     worksheet.append_row(headers)
 
-                # Baris Data Vendor Baru
                 row_data = [
                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     nama_vendor,
                     str(tgl_update),
                     nama_pj,
                     kontak_vendor,
-                    f"{score_pct:.1f}%"
+                    f"{score_pct:.1f}%",
+                    pdf_drive_link
                 ]
                 
                 for sec in sections:
@@ -240,9 +373,21 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
 
                 worksheet.append_row(row_data)
 
-                st.success(f"✅ Formulir CSMS **{nama_vendor}** berhasil disimpan!")
+                # 6. Tampilkan Hasil di Layar Web
+                st.success(f"✅ Formulir CSMS **{nama_vendor}** berhasil dikirim & disimpan!")
                 st.balloons()
-                st.metric(label="Skor Kepatuhan CSMS", value=f"{score_pct:.1f}%")
+                
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    st.metric(label="Skor Kepatuhan CSMS", value=f"{score_pct:.1f}%")
+                with col_m2:
+                    st.download_button(
+                        label="📄 Unduh Ringkasan PDF CSMS",
+                        data=pdf_bytes,
+                        file_name=pdf_filename,
+                        mime="application/pdf",
+                        type="primary"
+                    )
 
             except Exception as e:
                 st.error(f"Terjadi kesalahan saat menyimpan data: {e}")
