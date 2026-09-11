@@ -300,21 +300,29 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 )
                 pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
 
-                # 4. Simpan Rekapitulasi ke Google Sheets (Bebas Kuota Drive Error)
+                # 4. Simpan Rekapitulasi ke Google Sheets & OTOMATIS TAMBAHKAN HEADER
                 gc = get_gsheets()
                 spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
                 sh = gc.open_by_key(spreadsheet_id)
                 worksheet = sh.sheet1
                 
-                if len(worksheet.get_all_values()) == 0:
-                    headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab", "Kontak", "Skor (%)"]
-                    for sec in sections:
-                        for q in sec['questions']:
-                            headers.append(f"[{q['id']}] Jawaban")
-                            if q.get('has_file'):
-                                headers.append(f"[{q['id']}] Status Lampiran")
-                    worksheet.append_row(headers)
+                # Buat Susunan Header Resmi
+                headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab K3", "Kontak", "Skor CSMS (%)"]
+                for sec in sections:
+                    for q in sec['questions']:
+                        headers.append(f"[{q['id']}] Jawaban")
+                        if q.get('has_file'):
+                            headers.append(f"[{q['id']}] Status Lampiran")
 
+                all_values = worksheet.get_all_values()
+                
+                # Cek & Otomatis Sisipkan Header di Paling Atas (Baris 1) jika belum ada
+                if len(all_values) == 0:
+                    worksheet.append_row(headers)
+                elif all_values[0][0] != "Timestamp":
+                    worksheet.insert_row(headers, index=1)
+
+                # Masukkan Data Vendor Baru
                 row_data = [
                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     nama_vendor,
