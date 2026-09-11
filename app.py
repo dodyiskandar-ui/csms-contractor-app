@@ -9,7 +9,7 @@ import io
 import gspread
 
 # Modul ReportLab untuk Generate PDF
-from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -44,7 +44,11 @@ def create_subfolder(drive_service, parent_id, folder_name):
         'mimeType': 'application/vnd.google-apps.folder',
         'parents': [parent_id]
     }
-    file = drive_service.files().create(body=file_metadata, fields='id').execute()
+    file = drive_service.files().create(
+        body=file_metadata, 
+        fields='id',
+        supportsAllDrives=True
+    ).execute()
     return file.get('id')
 
 def upload_file_to_drive(drive_service, parent_id, file_name, file_bytes, mime_type):
@@ -56,7 +60,8 @@ def upload_file_to_drive(drive_service, parent_id, file_name, file_bytes, mime_t
     uploaded = drive_service.files().create(
         body=file_metadata,
         media_body=media,
-        fields='id, webViewLink'
+        fields='id, webViewLink',
+        supportsAllDrives=True
     ).execute()
     return uploaded.get('webViewLink')
 
@@ -78,20 +83,20 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     title_style = ParagraphStyle(
         'TitleStyle',
         parent=styles['Heading1'],
-        fontSize=16,
-        leading=20,
-        alignment=1, # Center
+        fontSize=14,
+        leading=18,
+        alignment=1,
         textColor=colors.HexColor('#1E3A8A')
     )
     subtitle_style = ParagraphStyle(
         'SubTitleStyle',
         parent=styles['Normal'],
-        fontSize=10,
-        leading=12,
+        fontSize=9,
+        leading=11,
         alignment=1,
         textColor=colors.gray
     )
-    bold_body = ParagraphStyle('BoldBody', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, leading=11)
+    bold_body = ParagraphStyle('BoldBody', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
     normal_body = ParagraphStyle('NormalBody', parent=styles['Normal'], fontSize=8, leading=10)
     
     elements = []
@@ -99,8 +104,8 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     # Header Dokumen
     elements.append(Paragraph("HASIL EVALUASI PRAKUALIFIKASI KONTRAKTOR (CSMS)", title_style))
     elements.append(Paragraph("Contractor Safety Management System - Form Ref: FM/QHE/0127 rev. 1", subtitle_style))
-    elements.append(Spacer(1, 15))
-    elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=15))
+    elements.append(Spacer(1, 10))
+    elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=12))
     
     # Tabel Informasi Vendor
     info_data = [
@@ -115,13 +120,13 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     t_info = Table(info_data, colWidths=[120, 150, 110, 140])
     t_info.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F3F4F6')),
-        ('PADDING', (0,0), (-1,-1), 6),
+        ('PADDING', (0,0), (-1,-1), 5),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
         ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB'))
     ]))
     elements.append(t_info)
-    elements.append(Spacer(1, 15))
+    elements.append(Spacer(1, 12))
     
     # Tabel Jawaban CSMS
     table_data = [
@@ -137,23 +142,18 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
             Paragraph(status_lampiran, normal_body)
         ])
         
-    t_questions = Table(table_data, colWidths=[35, 315, 60, 110])
+    t_questions = Table(table_data, colWidths=[30, 320, 60, 110])
     t_questions.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('PADDING', (0,0), (-1,-1), 5),
+        ('PADDING', (0,0), (-1,-1), 4),
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#9CA3AF')),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F9FAFB')])
     ]))
     
-    # Ubah warna teks header tabel
-    for col in range(len(table_data[0])):
-        table_data[0][col].style.textColor = colors.white
-        
     elements.append(t_questions)
     
-    # Build PDF
     doc.build(elements)
     pdf_bytes = buffer.getvalue()
     buffer.close()
@@ -174,7 +174,7 @@ with col2:
 st.divider()
 
 # ---------------------------------------------------------
-# SOAL EVALUASI CSMS (14 KATEGORI)
+# MASTER DATA SOAL CSMS (14 KATEGORI)
 # ---------------------------------------------------------
 st.subheader("2. Pertanyaan Evaluasi CSMS")
 
@@ -285,7 +285,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 upload_parent_id = st.secrets["google_drive"]["folder_upload_id"]
                 spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
 
-                # 1. Buat Subfolder Khusus Vendor
+                # 1. Buat Subfolder Khusus Vendor di Drive
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 clean_vendor_name = "".join(c for c in nama_vendor if c.isalnum() or c in (' ', '_', '-')).rstrip()
                 vendor_folder_name = f"{clean_vendor_name}_{timestamp}"
@@ -326,12 +326,11 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 total_ya = sum(1 for v in responses.values() if v == "Ya")
                 score_pct = (total_ya / total_questions) * 100
 
-                # 4. Generate Dokumen PDF
+                # 4. Generate & Upload PDF Ringkasan
                 pdf_bytes = generate_csms_pdf(
                     nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, summary_list
                 )
                 
-                # Upload PDF ke Google Drive Vendor
                 pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
                 pdf_drive_link = upload_file_to_drive(
                     drive_service,
@@ -373,7 +372,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
 
                 worksheet.append_row(row_data)
 
-                # 6. Tampilkan Hasil di Layar Web
+                # 6. Tampilkan Konfirmasi & Tombol Unduh PDF
                 st.success(f"✅ Formulir CSMS **{nama_vendor}** berhasil dikirim & disimpan!")
                 st.balloons()
                 
