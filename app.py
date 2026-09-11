@@ -56,14 +56,27 @@ def upload_file_to_drive(drive_service, parent_id, file_name, file_bytes, mime_t
         'name': file_name,
         'parents': [parent_id]
     }
-    media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
-    uploaded = drive_service.files().create(
+    
+    # Membagi upload menjadi potongan/chunk kecil (1MB) agar tidak terjadi 'Broken pipe' saat upload file besar
+    media = MediaIoBaseUpload(
+        io.BytesIO(file_bytes),
+        mimetype=mime_type,
+        chunksize=1024*1024,
+        resumable=True
+    )
+    
+    request = drive_service.files().create(
         body=file_metadata,
         media_body=media,
         fields='id, webViewLink',
         supportsAllDrives=True
-    ).execute()
-    return uploaded.get('webViewLink')
+    )
+    
+    response = None
+    while response is None:
+        status, response = request.next_chunk()
+        
+    return response.get('webViewLink')
 
 # ---------------------------------------------------------
 # FUNGSI GENERATE PDF CSMS
