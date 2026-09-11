@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import io
+import requests
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -20,7 +21,41 @@ st.caption("Contractor Safety Management System - FM/QHE/0127 rev. 1")
 st.divider()
 
 # ---------------------------------------------------------
-# FUNGSI INTEGRASI DATABASE GOOGLE SHEETS
+# FUNGSI INTEGRASI TELEGRAM BOT API
+# ---------------------------------------------------------
+def send_telegram_message(bot_token, chat_id, text):
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    try:
+        response = requests.post(url, json=payload, timeout=15)
+        return response.json()
+    except Exception as e:
+        st.error(f"Gagal koneksi Telegram Message: {e}")
+        return None
+
+def send_telegram_document(bot_token, chat_id, file_bytes, filename, caption=""):
+    url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+    files = {
+        "document": (filename, file_bytes)
+    }
+    data = {
+        "chat_id": chat_id,
+        "caption": caption,
+        "parse_mode": "HTML"
+    }
+    try:
+        response = requests.post(url, data=data, files=files, timeout=30)
+        return response.json()
+    except Exception as e:
+        st.error(f"Gagal unggah file ke Telegram ({filename}): {e}")
+        return None
+
+# ---------------------------------------------------------
+# FUNGSI INTEGRASI GOOGLE SHEETS
 # ---------------------------------------------------------
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
@@ -57,20 +92,18 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     
     elements = []
     
-    # Header Dokumen
     elements.append(Paragraph("HASIL EVALUASI PRAKUALIFIKASI KONTRAKTOR (CSMS)", title_style))
     elements.append(Paragraph("Contractor Safety Management System - Form Ref: FM/QHE/0127 rev. 1", subtitle_style))
     elements.append(Spacer(1, 10))
     elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=12))
     
-    # Tabel Informasi Vendor
     info_data = [
         [Paragraph("<b>Nama Vendor/Supplier</b>", normal_body), Paragraph(f": {nama_vendor}", normal_body),
          Paragraph("<b>Tanggal Pengisian</b>", normal_body), Paragraph(f": {tgl_update}", normal_body)],
         [Paragraph("<b>Penanggung Jawab K3</b>", normal_body), Paragraph(f": {nama_pj}", normal_body),
          Paragraph("<b>Kontak/Email</b>", normal_body), Paragraph(f": {kontak_vendor}", normal_body)],
         [Paragraph("<b>Skor Kepatuhan CSMS</b>", normal_body), Paragraph(f": <b>{score_pct:.1f}%</b>", normal_body),
-         Paragraph("<b>Status Database</b>", normal_body), Paragraph(": TERSIMPAN (GOOGLE SHEETS)", normal_body)]
+         Paragraph("<b>Status Pengajuan</b>", normal_body), Paragraph(": TERSIMPAN & TERKIRIM", normal_body)]
     ]
     
     t_info = Table(info_data, colWidths=[120, 150, 110, 140])
@@ -84,9 +117,8 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     elements.append(t_info)
     elements.append(Spacer(1, 12))
     
-    # Tabel Jawaban CSMS
     table_data = [
-        [Paragraph("<b>No</b>", bold_body), Paragraph("<b>Pertanyaan Evaluasi CSMS</b>", bold_body), Paragraph("<b>Jawaban</b>", bold_body), Paragraph("<b>Status Lampiran</b>", bold_body)]
+        [Paragraph("<b>No</b>", bold_body), Paragraph("<b>Pertanyaan Evaluasi CSMS</b>", bold_body), Paragraph("<b>Jawaban</b>", bold_body), Paragraph("<b>Keterangan Lampiran</b>", bold_body)]
     ]
     
     for item in summary_list:
@@ -202,6 +234,7 @@ sections = [
 ]
 
 responses = {}
+uploaded_files_dict = {}
 file_status = {}
 total_questions = 0
 
@@ -220,25 +253,29 @@ for section in sections:
             if q.get('has_file'):
                 if ans == "Ya":
                     up_file = st.file_uploader(f"📎 {q.get('file_label')}", key=f"file_{q['id']}")
-                    file_status[q['id']] = f"Ada ({up_file.name})" if up_file else "Ada (Belum diunggah)"
+                    if up_file:
+                        uploaded_files_dict[q['id']] = up_file
+                        file_status[q['id']] = f"Ada ({up_file.name})"
+                    else:
+                        uploaded_files_dict[q['id']] = None
+                        file_status[q['id']] = "Ada (Belum diunggah)"
                 else:
+                    uploaded_files_dict[q['id']] = None
                     file_status[q['id']] = "Tidak Ada (N/A)"
             else:
+                uploaded_files_dict[q['id']] = None
                 file_status[q['id']] = "-"
     st.markdown("---")
 
 # ---------------------------------------------------------
-# PROSES SUBMIT FORM & SIMPAN KE DATABASE GOOGLE SHEETS
+# PROSES SUBMIT FORM
 # ---------------------------------------------------------
 if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     if not nama_vendor:
         st.error("⚠️ Harap isi Nama Perusahaan terlebih dahulu!")
     else:
-        with st.spinner("Mencetak PDF dan menyimpan data ke Database Google Sheets..."):
+        with st.spinner("Menyimpan data ke Google Sheets & Mengirimkan berkas ke Telegram..."):
             try:
-                gc = get_gsheets()
-                spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
-
                 # 1. Hitung Skor CSMS
                 total_ya = sum(1 for v in responses.values() if v == "Ya")
                 score_pct = (total_ya / total_questions) * 100
@@ -263,11 +300,12 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 )
                 pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
 
-                # 4. Simpan Rekapitulasi Data ke Database Google Sheets
+                # 4. Simpan Rekapitulasi ke Google Sheets (Bebas Kuota Drive Error)
+                gc = get_gsheets()
+                spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
                 sh = gc.open_by_key(spreadsheet_id)
                 worksheet = sh.sheet1
                 
-                # Buat Header jika spreadsheet masih kosong
                 if len(worksheet.get_all_values()) == 0:
                     headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab", "Kontak", "Skor (%)"]
                     for sec in sections:
@@ -277,7 +315,6 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                                 headers.append(f"[{q['id']}] Status Lampiran")
                     worksheet.append_row(headers)
 
-                # Masukkan Baris Log Data Baru
                 row_data = [
                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     nama_vendor,
@@ -296,8 +333,36 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
 
                 worksheet.append_row(row_data)
 
-                # 5. Tampilkan Konfirmasi & Tombol Unduh PDF
-                st.success(f"✅ Data pengajuan CSMS untuk **{nama_vendor}** berhasil tersimpan di Google Sheets!")
+                # 5. Kirim Berkas & PDF Ringkasan ke Telegram Bot
+                if "telegram" in st.secrets and "bot_token" in st.secrets["telegram"]:
+                    bot_token = st.secrets["telegram"]["bot_token"]
+                    chat_id = st.secrets["telegram"]["chat_id"]
+
+                    # A. Kirim Pesan Rangkuman CSMS
+                    notif_text = (
+                        f"🚨 <b>PENGAJUAN CSMS BARU</b>\n\n"
+                        f"🏢 <b>Vendor:</b> {nama_vendor}\n"
+                        f"📅 <b>Tgl Pengisian:</b> {tgl_update}\n"
+                        f"👤 <b>Penanggung Jawab K3:</b> {nama_pj}\n"
+                        f"📞 <b>Kontak:</b> {kontak_vendor}\n"
+                        f"📊 <b>Skor CSMS:</b> <code>{score_pct:.1f}%</code> ({total_ya} dari {total_questions} Ya)"
+                    )
+                    send_telegram_message(bot_token, chat_id, notif_text)
+
+                    # B. Kirim Berkas Lampiran Vendor
+                    for q_id, f_obj in uploaded_files_dict.items():
+                        if f_obj is not None:
+                            file_b = f_obj.getvalue()
+                            dest_fn = f"{q_id}_{clean_vendor_name}_{f_obj.name}"
+                            cap = f"📎 <b>Lampiran [{q_id}]</b> - {nama_vendor}"
+                            send_telegram_document(bot_token, chat_id, file_b, dest_fn, cap)
+
+                    # C. Kirim PDF CSMS Ringkasan
+                    pdf_cap = f"📄 <b>PDF RINGKASAN CSMS</b> - {nama_vendor}"
+                    send_telegram_document(bot_token, chat_id, pdf_bytes, pdf_filename, pdf_cap)
+
+                # 6. Tampilkan Konfirmasi Lengkap di Web
+                st.success(f"✅ Pengajuan CSMS untuk **{nama_vendor}** berhasil tersimpan di Google Sheets & dikirim ke Telegram!")
                 st.balloons()
                 
                 col_m1, col_m2 = st.columns(2)
@@ -313,4 +378,4 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                     )
 
             except Exception as e:
-                st.error(f"Terjadi kesalahan saat menyimpan log ke database Google Sheets: {e}")
+                st.error(f"Terjadi kesalahan saat memproses data: {e}")
