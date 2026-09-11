@@ -57,24 +57,42 @@ def upload_file_to_drive(drive_service, parent_id, file_name, file_bytes, mime_t
         'parents': [parent_id]
     }
     
-    # Pointer reset & Direct Upload untuk mencegah [Errno 32] Broken Pipe
-    fh = io.BytesIO(file_bytes)
-    fh.seek(0)
-    
+    # Chunking 1MB (1024*1024) dan Resumable Upload
     media = MediaIoBaseUpload(
-        fh,
+        io.BytesIO(file_bytes),
         mimetype=mime_type,
-        resumable=False
+        chunksize=1024*1024,
+        resumable=True
     )
     
-    uploaded = drive_service.files().create(
+    request = drive_service.files().create(
         body=file_metadata,
         media_body=media,
         fields='id, webViewLink',
         supportsAllDrives=True
-    ).execute()
+    )
     
-    return uploaded.get('webViewLink')
+    response = None
+    while response is None:
+        status, response = request.next_chunk()
+        
+    file_id = response.get('id')
+    
+    # Pindahkan izin / buat file dapat diakses publik via link jika di folder biasa
+    try:
+        permission = {
+            'type': 'anyone',
+            'role': 'reader'
+        }
+        drive_service.permissions().create(
+            fileId=file_id,
+            body=permission,
+            supportsAllDrives=True
+        ).execute()
+    except Exception:
+        pass
+
+    return response.get('webViewLink')
 
 # ---------------------------------------------------------
 # FUNGSI GENERATE PDF CSMS
@@ -296,11 +314,16 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 upload_parent_id = st.secrets["google_drive"]["folder_upload_id"]
                 spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
 
-                # 1. Buat Subfolder Khusus Vendor di Drive
+                # 1. Gunakan folder induk secara langsung jika pembuatan subfolder memicu batas kuota
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 clean_vendor_name = "".join(c for c in nama_vendor if c.isalnum() or c in (' ', '_', '-')).rstrip()
-                vendor_folder_name = f"{clean_vendor_name}_{timestamp}"
-                vendor_folder_id = create_subfolder(drive_service, upload_parent_id, vendor_folder_name)
+                
+                try:
+                    vendor_folder_name = f"{clean_vendor_name}_{timestamp}"
+                    target_folder_id = create_subfolder(drive_service, upload_parent_id, vendor_folder_name)
+                except Exception:
+                    # Fallback jika pembuatan subfolder ditolak kuota, upload langsung ke folder utama
+                    target_folder_id = upload_parent_id
 
                 # 2. Upload Lampiran Vendor
                 attachment_links = {}
@@ -316,7 +339,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                             dest_filename = f"{q_id}_{clean_vendor_name}.{file_ext}"
                             link = upload_file_to_drive(
                                 drive_service,
-                                vendor_folder_id,
+                                target_folder_id,
                                 dest_filename,
                                 f_obj.getvalue(),
                                 f_obj.type
@@ -345,7 +368,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
                 pdf_drive_link = upload_file_to_drive(
                     drive_service,
-                    vendor_folder_id,
+                    target_folder_id,
                     pdf_filename,
                     pdf_bytes,
                     "application/pdf"
