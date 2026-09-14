@@ -20,6 +20,18 @@ from reportlab.lib import colors
 # ---------------------------------------------------------
 st.set_page_config(page_title="Prakualifikasi Kontraktor CSMS", layout="wide")
 
+# CSS Khusus Menyembunyikan Teks "200MB per file" bawaan Streamlit
+hide_200mb_css = """
+<style>
+    /* Menyembunyikan teks keterangan ukuran file default Streamlit (200MB per file) */
+    small[data-testid="stFileUploaderFileData"], 
+    div[data-testid="stFileUploader"] section small {
+        display: none !important;
+    }
+</style>
+"""
+st.markdown(hide_200mb_css, unsafe_allow_html=True)
+
 query_params = st.query_params
 url_token = query_params.get("token", "").strip().upper()
 
@@ -321,7 +333,7 @@ def get_current_app_url():
 # MENU SIDEBAR ADMIN
 # ---------------------------------------------------------
 st.sidebar.title("🔐 Panel Admin HSE")
-admin_pass = st.sidebar.text_input("Password Admin", type="password")
+admin_pass = st.sidebar.text_input("Masukkan Password Admin", type="password")
 
 if admin_pass == ADMIN_PASSWORD:
     st.sidebar.success("Mode Admin Aktif")
@@ -499,10 +511,8 @@ for section in sections:
         with col_file:
             if q.get('has_file'):
                 if ans == "Ya":
-                    # Batas khusus ekstensi PDF & Keterangan Max 5MB
                     up_file = st.file_uploader(f"📎 {q.get('file_label')} (Format PDF, Maks. 5MB)", type=["pdf"], key=f"file_{q_id}")
                     if up_file:
-                        # Pengecekan Ukuran File Maximum 5MB (5 * 1024 * 1024 bytes)
                         if up_file.size > 5 * 1024 * 1024:
                             st.error(f"⚠️ File **{up_file.name}** melebihi batas 5MB! Harap unggah file PDF yang lebih kecil.")
                             uploaded_files_dict[q_id] = None
