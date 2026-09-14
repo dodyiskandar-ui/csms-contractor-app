@@ -20,7 +20,6 @@ from reportlab.lib import colors
 # ---------------------------------------------------------
 st.set_page_config(page_title="Prakualifikasi Kontraktor CSMS", layout="wide", initial_sidebar_state="collapsed")
 
-# CSS Injection: Menghilangkan Sidebar Panel Admin & Menghapus Teks 200MB per file
 custom_css = """
 <style>
     /* 1. Sembunyikan Sidebar Panel Admin secara Total */
@@ -128,7 +127,7 @@ def verify_token_credentials(input_token):
 # ---------------------------------------------------------
 # FUNGSI GENERATE PDF CSMS
 # ---------------------------------------------------------
-def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, summary_list):
+def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, total_poin, summary_list):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
@@ -139,9 +138,9 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     center_body = ParagraphStyle('CenterBody', parent=styles['Normal'], fontSize=8, leading=10, alignment=1)
     
     if score_pct >= 70.0:
-        kesimpulan_text = "<font color='#166534'><b>Dapat diterima</b></font>"
+        kesimpulan_text = "<font color='#166534'><b>Dapat diterima (Lulus CSMS)</b></font>"
     else:
-        kesimpulan_text = "<font color='#DC2626'><b>Tidak dapat diterima</b></font>"
+        kesimpulan_text = "<font color='#DC2626'><b>Tidak dapat diterima (Tidak Lulus)</b></font>"
 
     elements = [
         Paragraph("HASIL EVALUASI PRAKUALIFIKASI KONTRAKTOR (CSMS)", title_style),
@@ -155,8 +154,8 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
          Paragraph("<b>Tanggal Pengisian</b>", normal_body), Paragraph(f": {tgl_update}", normal_body)],
         [Paragraph("<b>Penanggung Jawab K3</b>", normal_body), Paragraph(f": {nama_pj}", normal_body),
          Paragraph("<b>Kontak/Email</b>", normal_body), Paragraph(f": {kontak_vendor}", normal_body)],
-        [Paragraph("<b>Skor Kepatuhan CSMS</b>", normal_body), Paragraph(f": <b>{score_pct:.1f}%</b>", normal_body),
-         Paragraph("", normal_body), Paragraph("", normal_body)],
+        [Paragraph("<b>Total Poin Evaluasi</b>", normal_body), Paragraph(f": <b>{total_poin} / 50 Poin</b>", normal_body),
+         Paragraph("<b>Skor Kepatuhan CSMS</b>", normal_body), Paragraph(f": <b>{score_pct:.1f}%</b>", normal_body)],
         [Paragraph("<b>Kesimpulan Hasil Evaluasi</b>", normal_body), Paragraph(f": {kesimpulan_text}", normal_body),
          Paragraph("", normal_body), Paragraph("", normal_body)]
     ]
@@ -504,7 +503,7 @@ for section in sections:
     st.markdown("---")
 
 # ---------------------------------------------------------
-# PROSES SUBMIT CSMS & DOWNLOAD PDF UNTUK VENDOR
+# PROSES SUBMIT CSMS & PERHITUNGAN SKOR BESERTA DOKUMEN PDF
 # ---------------------------------------------------------
 if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     if not nama_vendor:
@@ -514,13 +513,22 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     else:
         with st.spinner("Menyimpan data CSMS & Mengubah Status Token menjadi Hangus..."):
             try:
+                # HITUNG POIN RESMI BERDASARKAN FM/QHE/0127 REV. 2:
+                # - Jawaban Ya = 1 Poin (Total 37 Soal)
+                # - Lampiran PDF Ada = 1 Poin (Total 13 Lampiran)
+                # - Total Poin Maksimal = 50 Poin
+                # - Nilai CSMS (%) = Total Poin x 2
+                
                 total_ya = sum(1 for v in responses.values() if v == "Ya")
-                score_pct = (total_ya / q_counter) * 100
+                total_files_uploaded = sum(1 for q_id, f_obj in uploaded_files_dict.items() if f_obj is not None)
+                
+                total_poin = total_ya + total_files_uploaded
+                score_pct = total_poin * 2.0  # (total_poin / 50) * 100%
 
                 if score_pct >= 70.0:
-                    status_eval = "Dapat diterima"
+                    status_eval = "Dapat diterima (Lulus CSMS)"
                 else:
-                    status_eval = "Tidak dapat diterima"
+                    status_eval = "Tidak dapat diterima (Tidak Lulus)"
 
                 summary_list = []
                 num_idx = 1
@@ -537,7 +545,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                         num_idx += 1
 
                 clean_vendor_name = "".join(c for c in nama_vendor if c.isalnum() or c in (' ', '_', '-')).rstrip()
-                pdf_bytes = generate_csms_pdf(nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, summary_list)
+                pdf_bytes = generate_csms_pdf(nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, total_poin, summary_list)
                 pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
 
                 # 1. Simpan Rekapitulasi ke Google Sheets
@@ -546,7 +554,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 sh = gc.open_by_key(spreadsheet_id)
                 worksheet = sh.sheet1
                 
-                headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab K3", "Kontak", "Skor CSMS (%)", "Kesimpulan Hasil Evaluasi"]
+                headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab K3", "Kontak", "Total Poin", "Skor CSMS (%)", "Kesimpulan Hasil Evaluasi"]
                 for sec in sections:
                     for q in sec['questions']:
                         headers.append(f"[{q['id']}] Jawaban")
@@ -565,6 +573,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                     str(tgl_update),
                     nama_pj,
                     kontak_vendor,
+                    f"{total_poin}/50",
                     f"{score_pct:.1f}%",
                     status_eval
                 ]
@@ -582,7 +591,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                     t_sheet = sh.worksheet("Token_Akses")
                     t_sheet.update_cell(st.session_state['token_row_idx'], 4, "Sudah Dipakai")
 
-                # 3. Kirim Telegram Notifikasi Hasil Submit CSMS & PDF ke Admin
+                # 3. Kirim Telegram Notifikasi Rapi Hasil CSMS ke Admin
                 if "telegram" in st.secrets and "bot_token" in st.secrets["telegram"]:
                     bot_token = st.secrets["telegram"]["bot_token"]
                     chat_id = st.secrets["telegram"]["chat_id"]
@@ -593,9 +602,11 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                         f"🏢 <b>Vendor:</b> {nama_vendor}\n"
                         f"📅 <b>Tgl Pengisian:</b> {tgl_update}\n"
                         f"👤 <b>Penanggung Jawab K3:</b> {nama_pj}\n"
-                        f"📞 <b>Kontak:</b> {kontak_vendor}\n"
-                        f"📊 <b>Skor CSMS:</b> <code>{score_pct:.1f}%</code> ({total_ya} dari {q_counter} Ya)\n"
-                        f"📌 <b>Kesimpulan Evaluasi:</b> {status_emoji} <b>{status_eval}</b>"
+                        f"📞 <b>Kontak:</b> {kontak_vendor}\n\n"
+                        f"📊 <b>Skor CSMS:</b> <code>{score_pct:.1f}%</code> ({total_poin} dari 50 Poin)\n"
+                        f"├ 📝 <b>Jawaban 'Ya':</b> {total_ya} dari 37 Soal\n"
+                        f"└ 📎 <b>Lampiran PDF:</b> {total_files_uploaded} dari 13 Dokumen\n\n"
+                        f"📌 <b>Hasil Evaluasi:</b> {status_emoji} <b>{status_eval}</b>"
                     )
                     send_telegram_message(bot_token, chat_id, notif_text)
 
@@ -615,16 +626,16 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 st.success(f"✅ Pengajuan CSMS untuk **{nama_vendor}** berhasil tersimpan!")
                 st.balloons()
                 
-                # TAMPILAN FITUR DOWNLOAD DOKUMEN CSMS UNTUK VENDOR
-                st.markdown("### 📄 Unduh Ringkasan Laporan CSMS Anda")
+                # TAMPILAN DETIL METRIK SKOR UNTUK VENDOR
+                st.markdown("### 📊 Hasil Evaluasi Prakualifikasi CSMS")
                 col_m1, col_m2, col_m3 = st.columns(3)
                 with col_m1:
-                    st.metric(label="Skor Kepatuhan CSMS", value=f"{score_pct:.1f}%")
+                    st.metric(label="Skor Kepatuhan CSMS", value=f"{score_pct:.1f}%", delta=f"{total_poin}/50 Poin Terkumpul")
                 with col_m2:
-                    st.metric(label="Kesimpulan Evaluasi", value=status_eval)
+                    st.metric(label="Status Hasil Evaluasi", value=status_eval)
                 with col_m3:
                     st.download_button(
-                        label="📄 Unduh Ringkasan PDF CSMS",
+                        label="📄 Unduh Laporan PDF CSMS",
                         data=pdf_bytes,
                         file_name=pdf_filename,
                         mime="application/pdf",
