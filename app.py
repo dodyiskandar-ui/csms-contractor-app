@@ -16,14 +16,20 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ---------------------------------------------------------
-# KONFIGURASI HALAMAN & INJEKSI CSS SEMBUNYIKAN 200MB
+# KONFIGURASI HALAMAN & INJEKSI CSS (HILANGKAN SIDEBAR & 200MB)
 # ---------------------------------------------------------
-st.set_page_config(page_title="Prakualifikasi Kontraktor CSMS", layout="wide")
+st.set_page_config(page_title="Prakualifikasi Kontraktor CSMS", layout="wide", initial_sidebar_state="collapsed")
 
-# CSS Super Presisi untuk Menghapus Teks 200MB per file • PDF
-hide_200mb_css = """
+# CSS Injection: Menghilangkan Sidebar Panel Admin & Menghapus Teks 200MB per file
+custom_css = """
 <style>
-    /* Sembunyikan semua teks keterangan ukuran bawaan Streamlit */
+    /* 1. Sembunyikan Sidebar Panel Admin secara Total */
+    [data-testid="stSidebar"], section[data-testid="stSidebar"] {
+        display: none !important;
+        width: 0px !important;
+    }
+    
+    /* 2. Sembunyikan Teks Keterangan Size Default Streamlit (200MB per file) */
     [data-testid="stFileUploaderDropzoneInstructions"] > div:nth-child(2),
     [data-testid="stFileUploaderDropzoneInstructions"] small,
     [data-testid="stFileUploaderDropzone"] small,
@@ -34,11 +40,10 @@ hide_200mb_css = """
         opacity: 0 !important;
         font-size: 0px !important;
         height: 0px !important;
-        width: 0px !important;
     }
 </style>
 """
-st.markdown(hide_200mb_css, unsafe_allow_html=True)
+st.markdown(custom_css, unsafe_allow_html=True)
 
 query_params = st.query_params
 url_token = query_params.get("token", "").strip().upper()
@@ -46,8 +51,6 @@ url_token = query_params.get("token", "").strip().upper()
 st.title("📋 Form Prakualifikasi Kontraktor (CSMS)")
 st.caption("Contractor Safety Management System - FM/QHE/0127 rev. 2")
 st.divider()
-
-ADMIN_PASSWORD = "ADMINCSMS2026"
 
 # ---------------------------------------------------------
 # FUNGSI INTEGRASI TELEGRAM BOT API
@@ -338,45 +341,6 @@ def get_current_app_url():
     return "https://csms-contractor-app.streamlit.app"
 
 # ---------------------------------------------------------
-# MENU SIDEBAR ADMIN
-# ---------------------------------------------------------
-st.sidebar.title("🔐 Panel Admin HSE")
-admin_pass = st.sidebar.text_input("Masukkan Password Admin", type="password")
-
-if admin_pass == ADMIN_PASSWORD:
-    st.sidebar.success("Mode Admin Aktif")
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("➕ Generate Link Undangan Manual")
-    input_vname = st.sidebar.text_input("Nama Vendor")
-    
-    if st.sidebar.button("Generate Link"):
-        if not input_vname:
-            st.sidebar.error("Nama Vendor harus diisi!")
-        else:
-            try:
-                gc = get_gsheets()
-                spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
-                sh = gc.open_by_key(spreadsheet_id)
-                try:
-                    t_sheet = sh.worksheet("Token_Akses")
-                except Exception:
-                    t_sheet = sh.add_worksheet(title="Token_Akses", rows="100", cols="4")
-                    t_sheet.append_row(["Token", "Nama Vendor", "Expired Date", "Status"])
-                
-                rand_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-                new_token = f"K3-{rand_str}"
-                exp_date = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
-                t_sheet.append_row([new_token, input_vname, exp_date, "Aktif"])
-                
-                base_url = get_current_app_url()
-                full_share_url = f"{base_url}/?token={new_token}"
-                
-                st.sidebar.code(full_share_url)
-                st.sidebar.success("Link berhasil dibuat! Silakan salin ke vendor.")
-            except Exception as e:
-                st.sidebar.error(f"Error: {e}")
-
-# ---------------------------------------------------------
 # AUTO-VERIFIKASI URL TOKEN JIKA DIKLIK VENDOR (AUTO-LOGIN)
 # ---------------------------------------------------------
 if 'authenticated' not in st.session_state:
@@ -478,10 +442,9 @@ if not st.session_state['authenticated']:
     st.stop()
 
 # ---------------------------------------------------------
-# FORM CSMS (PEMBATASAN ATTACHMENT PDF & MAKSIMAL 5MB)
+# FORM CSMS (LAYAR VENDOR)
 # ---------------------------------------------------------
-st.sidebar.markdown("---")
-st.sidebar.success(f"Token Aktif:\n`{st.session_state.get('active_token')}`\n({st.session_state.get('assigned_vendor')})")
+st.info(f"🔑 **Token Akses Aktif:** `{st.session_state.get('active_token')}` — Perusahaan: **{st.session_state.get('assigned_vendor')}**")
 
 st.subheader("1. Identitas Perusahaan")
 col1, col2 = st.columns(2)
@@ -541,7 +504,7 @@ for section in sections:
     st.markdown("---")
 
 # ---------------------------------------------------------
-# PROSES SUBMIT CSMS
+# PROSES SUBMIT CSMS & DOWNLOAD PDF UNTUK VENDOR
 # ---------------------------------------------------------
 if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     if not nama_vendor:
@@ -619,7 +582,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                     t_sheet = sh.worksheet("Token_Akses")
                     t_sheet.update_cell(st.session_state['token_row_idx'], 4, "Sudah Dipakai")
 
-                # 3. Kirim Telegram Notifikasi Hasil Submit CSMS & PDF
+                # 3. Kirim Telegram Notifikasi Hasil Submit CSMS & PDF ke Admin
                 if "telegram" in st.secrets and "bot_token" in st.secrets["telegram"]:
                     bot_token = st.secrets["telegram"]["bot_token"]
                     chat_id = st.secrets["telegram"]["chat_id"]
@@ -652,6 +615,8 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 st.success(f"✅ Pengajuan CSMS untuk **{nama_vendor}** berhasil tersimpan!")
                 st.balloons()
                 
+                # TAMPILAN FITUR DOWNLOAD DOKUMEN CSMS UNTUK VENDOR
+                st.markdown("### 📄 Unduh Ringkasan Laporan CSMS Anda")
                 col_m1, col_m2, col_m3 = st.columns(3)
                 with col_m1:
                     st.metric(label="Skor Kepatuhan CSMS", value=f"{score_pct:.1f}%")
@@ -663,7 +628,8 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                         data=pdf_bytes,
                         file_name=pdf_filename,
                         mime="application/pdf",
-                        type="primary"
+                        type="primary",
+                        use_container_width=True
                     )
 
             except Exception as e:
