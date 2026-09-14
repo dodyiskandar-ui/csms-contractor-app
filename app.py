@@ -16,17 +16,23 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ---------------------------------------------------------
-# KONFIGURASI HALAMAN & PARAMETER URL
+# KONFIGURASI HALAMAN & INJEKSI CSS SEMBUNYIKAN 200MB
 # ---------------------------------------------------------
 st.set_page_config(page_title="Prakualifikasi Kontraktor CSMS", layout="wide")
 
-# CSS Khusus Menyembunyikan Teks "200MB per file" bawaan Streamlit
+# CSS Kuat untuk Menghapus Teks Default Size Streamlit (200MB per file)
 hide_200mb_css = """
 <style>
-    /* Menyembunyikan teks keterangan ukuran file default Streamlit (200MB per file) */
-    small[data-testid="stFileUploaderFileData"], 
-    div[data-testid="stFileUploader"] section small {
+    /* Sembunyikan semua elemen teks instruksi default di dalam Dropzone File Uploader */
+    div[data-testid="stFileUploader"] small,
+    div[data-testid="stFileUploaderDropzoneInstructions"] small,
+    div[data-testid="stFileUploaderDropzoneInstructions"] div:nth-child(2),
+    section[data-testid="stFileUploaderDropzone"] small,
+    [data-testid="stFileUploaderFileData"] {
         display: none !important;
+        visibility: hidden !important;
+        height: 0px !important;
+        font-size: 0px !important;
     }
 </style>
 """
