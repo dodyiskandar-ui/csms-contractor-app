@@ -64,7 +64,7 @@ def get_gsheets():
     return gc
 
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS (DILENGKAPI KESIMPULAN & NO RAPI)
+# FUNGSI GENERATE PDF CSMS
 # ---------------------------------------------------------
 def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, summary_list):
     buffer = io.BytesIO()
@@ -212,6 +212,17 @@ sections = [
 ]
 
 # ---------------------------------------------------------
+# DETEKSI URL OTOMATIS APLIKASI
+# ---------------------------------------------------------
+def get_current_app_url():
+    if hasattr(st, "context") and hasattr(st.context, "headers"):
+        headers = st.context.headers
+        host = headers.get("host", "")
+        if host:
+            return f"https://{host}"
+    return "https://csms-contractor-app.streamlit.app"
+
+# ---------------------------------------------------------
 # MENU SIDEBAR ADMIN
 # ---------------------------------------------------------
 st.sidebar.title("🔐 Panel Admin HSE")
@@ -242,7 +253,7 @@ if admin_pass == ADMIN_PASSWORD:
                 exp_date = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
                 t_sheet.append_row([new_token, input_vname, exp_date, "Aktif"])
                 
-                base_url = "https://csms-contractor-app.streamlit.app"
+                base_url = get_current_app_url()
                 full_share_url = f"{base_url}/?token={new_token}"
                 
                 st.sidebar.code(full_share_url)
@@ -251,7 +262,7 @@ if admin_pass == ADMIN_PASSWORD:
                 st.sidebar.error(f"Error: {e}")
 
 # ---------------------------------------------------------
-# SISTEM REGISTRASI MANDIRI VENDOR (NOTIF TELEGRAM KHUSUS)
+# SISTEM REGISTRASI MANDIRI VENDOR (DYNAMIC URL)
 # ---------------------------------------------------------
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
@@ -266,11 +277,11 @@ if not st.session_state['authenticated']:
         reg_vendor_name = st.text_input("Nama Perusahaan / Supplier / Vendor (Resmi)")
         reg_vendor_email = st.text_input("Email Resmi Perusahaan / PIC HSE")
         
-        if st.button("🚀 Daftarkan & Kirim Undangan", type="primary"):
+        if st.button("🚀 Daftarkan & Dapatkan Link CSMS", type="primary"):
             if not reg_vendor_name or not reg_vendor_email:
                 st.error("Harap isi Nama Perusahaan dan Email Resmi terlebih dahulu!")
             else:
-                with st.spinner("Memproses registrasi & mengirimkan Link Unik ke Telegram Admin..."):
+                with st.spinner("Memproses registrasi & menerbitkan Token Akses CSMS..."):
                     try:
                         gc = get_gsheets()
                         spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
@@ -288,7 +299,8 @@ if not st.session_state['authenticated']:
                         
                         t_sheet.append_row([new_token, reg_vendor_name, exp_date, "Aktif"])
                         
-                        base_url = "https://csms-contractor-app.streamlit.app"
+                        # Deteksi URL Aplikasi Secara Otomatis
+                        base_url = get_current_app_url()
                         share_url = f"{base_url}/?token={new_token}"
                         
                         # Kirim Notifikasi & Link Unik ke Telegram Admin QHSE
@@ -312,7 +324,7 @@ if not st.session_state['authenticated']:
                             
                         st.success("✅ Registrasi Berhasil!")
                         st.markdown(f"**Link Pengisian CSMS Anda:**\n[{share_url}]({share_url})")
-                        st.info("📌 Silakan klik link di atas atau tunggu konfirmasi/email resmi dari Tim HSE kami yang berisi link pengisian ini.")
+                        st.info("📌 Silakan klik link di atas untuk langsung mengisikan Formulir CSMS perusahaan Anda.")
                     except Exception as e:
                         st.error(f"Gagal melakukan registrasi: {e}")
 
