@@ -55,18 +55,20 @@ def send_telegram_document(bot_token, chat_id, file_bytes, filename, caption="")
         return None
 
 # ---------------------------------------------------------
-# FUNGSI PENGIRIMAN EMAIL LINK UNIK (SMTP + GMAIL APP PASSWORD)
+# FUNGSI PENGIRIMAN EMAIL (SILENT MODE - NO ERROR RED POPUP)
 # ---------------------------------------------------------
 def send_token_email(receiver_email, vendor_name, share_url, exp_date):
     if "email" not in st.secrets:
-        st.error("⚠️ Konfigurasi [email] belum ditambahkan pada Streamlit Secrets!")
         return False
         
     try:
-        smtp_server = st.secrets["email"]["smtp_server"]
-        smtp_port = int(st.secrets["email"]["smtp_port"])
-        sender_email = st.secrets["email"]["sender_email"]
-        sender_password = st.secrets["email"]["sender_password"]
+        smtp_server = st.secrets["email"].get("smtp_server", "smtp.gmail.com")
+        smtp_port = int(st.secrets["email"].get("smtp_port", 587))
+        sender_email = st.secrets["email"].get("sender_email", "")
+        sender_password = st.secrets["email"].get("sender_password", "")
+
+        if not sender_email or not sender_password:
+            return False
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = f"🔐 Undangan Pengisian CSMS - {vendor_name}"
@@ -99,8 +101,8 @@ def send_token_email(receiver_email, vendor_name, share_url, exp_date):
             server.login(sender_email, sender_password)
             server.send_message(msg)
         return True
-    except Exception as e:
-        st.error(f"⚠️ Gagal Mengirim Email: {e}")
+    except Exception:
+        # Menelan error email agar tampilan web vendor tetap bersih
         return False
 
 # ---------------------------------------------------------
@@ -116,7 +118,7 @@ def get_gsheets():
     return gc
 
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS (RAPID & DILENGKAPI KESIMPULAN)
+# FUNGSI GENERATE PDF CSMS
 # ---------------------------------------------------------
 def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, summary_list):
     buffer = io.BytesIO()
@@ -128,7 +130,6 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     normal_body = ParagraphStyle('NormalBody', parent=styles['Normal'], fontSize=8, leading=10)
     center_body = ParagraphStyle('CenterBody', parent=styles['Normal'], fontSize=8, leading=10, alignment=1)
     
-    # Kriteria Kesimpulan Evaluasi (Skor >= 70%: Dapat diterima, < 70%: Tidak dapat diterima)
     if score_pct >= 70.0:
         kesimpulan_text = "<font color='#166534'><b>Dapat diterima</b></font>"
     else:
@@ -300,9 +301,7 @@ if admin_pass == ADMIN_PASSWORD:
                 full_share_url = f"{base_url}/?token={new_token}"
                 
                 if input_vemail:
-                    sent = send_token_email(input_vemail, input_vname, full_share_url, exp_date)
-                    if sent:
-                        st.sidebar.success("Link berhasil dikirim ke Email Vendor!")
+                    send_token_email(input_vemail, input_vname, full_share_url, exp_date)
                 st.sidebar.code(full_share_url)
             except Exception as e:
                 st.sidebar.error(f"Error: {e}")
@@ -348,7 +347,7 @@ if not st.session_state['authenticated']:
                         base_url = "https://csms-contractor-app.streamlit.app"
                         share_url = f"{base_url}/?token={new_token}"
                         
-                        # Kirim Email Otomatis (SMTP)
+                        # Kirim Email otomatis (jika disetup)
                         send_token_email(reg_vendor_email, reg_vendor_name, share_url, exp_date)
                         
                         # Notif ke Telegram Admin
@@ -360,7 +359,7 @@ if not st.session_state['authenticated']:
                             
                         st.success("✅ Registrasi Berhasil!")
                         st.markdown(f"**Link Pengisian CSMS Anda:**\n[{share_url}]({share_url})")
-                        st.info("📌 Silakan klik link di atas atau periksa inbox email Anda untuk langsung mengisi Formulir CSMS.")
+                        st.info("📌 Silakan klik link di atas untuk langsung mengisikan Formulir CSMS perusahaan Anda.")
                     except Exception as e:
                         st.error(f"Gagal melakukan registrasi: {e}")
 
