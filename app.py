@@ -24,7 +24,7 @@ query_params = st.query_params
 url_token = query_params.get("token", "")
 
 st.title("📋 Form Prakualifikasi Kontraktor (CSMS)")
-st.caption("Contractor Safety Management System - FM/QHE/0127 rev. 1")
+st.caption("Contractor Safety Management System - FM/QHE/0127 rev. 2")
 st.divider()
 
 ADMIN_PASSWORD = "ADMINCSMS2026"
@@ -64,7 +64,7 @@ def get_gsheets():
     return gc
 
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS
+# FUNGSI GENERATE PDF CSMS (STATUS PENGAJUAN DIHILANGKAN)
 # ---------------------------------------------------------
 def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, summary_list):
     buffer = io.BytesIO()
@@ -83,18 +83,19 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
 
     elements = [
         Paragraph("HASIL EVALUASI PRAKUALIFIKASI KONTRAKTOR (CSMS)", title_style),
-        Paragraph("Contractor Safety Management System - Form Ref: FM/QHE/0127 rev. 1", subtitle_style),
+        Paragraph("Contractor Safety Management System - Form Ref: FM/QHE/0127 rev. 2", subtitle_style),
         Spacer(1, 10),
         HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=12)
     ]
     
+    # Header Tabel Informasi (Status Pengajuan Hilang)
     info_data = [
         [Paragraph("<b>Nama Vendor/Supplier</b>", normal_body), Paragraph(f": {nama_vendor}", normal_body),
          Paragraph("<b>Tanggal Pengisian</b>", normal_body), Paragraph(f": {tgl_update}", normal_body)],
         [Paragraph("<b>Penanggung Jawab K3</b>", normal_body), Paragraph(f": {nama_pj}", normal_body),
          Paragraph("<b>Kontak/Email</b>", normal_body), Paragraph(f": {kontak_vendor}", normal_body)],
         [Paragraph("<b>Skor Kepatuhan CSMS</b>", normal_body), Paragraph(f": <b>{score_pct:.1f}%</b>", normal_body),
-         Paragraph("<b>Status Pengajuan</b>", normal_body), Paragraph(": TERSIMPAN & TERVERIFIKASI", normal_body)],
+         Paragraph("", normal_body), Paragraph("", normal_body)],
         [Paragraph("<b>Kesimpulan Hasil Evaluasi</b>", normal_body), Paragraph(f": {kesimpulan_text}", normal_body),
          Paragraph("", normal_body), Paragraph("", normal_body)]
     ]
@@ -141,74 +142,130 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     return pdf_bytes
 
 # ---------------------------------------------------------
-# MASTER DATA SOAL CSMS (14 KATEGORI)
+# MASTER DATA SOAL CSMS (REVISI 2 SEESUAI REVISI TERBARU)
 # ---------------------------------------------------------
 sections = [
-    {"kat_id": "1", "kategori": "PERNYATAAN KEBIJAKAN", "questions": [
-        {"id": "1a", "text": "Apakah perusahaan mempunyai Kebijakan tertulis tentang K3 dan Lingkungan ?", "has_file": True, "file_label": "Lampirkan copy Kebijakan K3 & Lingkungan"},
-        {"id": "1b", "text": "Apakah manajemen perusahaan bertanggung jawab atas kinerja K3 dan Lingkungan ?", "has_file": False},
-        {"id": "1c", "text": "Apakah kebijakan K3 & Lingkungan itu dikomunikasikan dengan pekerja perusahaan ?", "has_file": False}
-    ]},
-    {"kat_id": "2", "kategori": "ORGANISASI KESELAMATAN KERJA", "questions": [
-        {"id": "2a", "text": "Apakah didalam struktur organisasi, perusahaan mempunyai HSE Officer dan/atau HSE Leader ?", "has_file": False},
-        {"id": "2b", "text": "Apakah perusahaan telah mempunyai job description HSE Officer dan/atau HSE Leader ?", "has_file": True, "file_label": "Lampirkan copy job description HSE Officer/Leader"},
-        {"id": "2c", "text": "Apakah HSE Officer dan/atau HSE Leader telah mempunyai program kerja ?", "has_file": True, "file_label": "Bila Ya, lampirkan copy program kerja HSE Officer/Leader"}
-    ]},
-    {"kat_id": "3", "kategori": "PERATURAN DASAR KESELAMATAN KERJA", "questions": [
-        {"id": "3a", "text": "Apakah perusahaan telah mempunyai Pedoman / Peraturan Dasar Keselamatan Kerja tertulis ?", "has_file": True, "file_label": "Lampirkan copy Pedoman / Peraturan Dasar K3"},
-        {"id": "3b", "text": "Apakah Peraturan Dasar K3 dijadikan pedoman dan disosialisasikan kepada pekerja ?", "has_file": False}
-    ]},
-    {"kat_id": "4", "kategori": "PROGRAM PELATIHAN KESELAMATAN KERJA", "questions": [
-        {"id": "4a", "text": "Adakah perusahaan memberikan pelatihan K3 kepada personil perusahaan ?", "has_file": True, "file_label": "Berikan data pelatihan (daftar hadir / sertifikat)"},
-        {"id": "4b", "text": "Apakah personil pada pekerjaan khusus telah mempunyai sertifikat resmi ?", "has_file": True, "file_label": "Lampirkan copy sertifikat resmi"},
-        {"id": "4c", "text": "Apakah pelatihan pekerja telah dijadwalkan termasuk pelatihan penyegaran ?", "has_file": False}
-    ]},
-    {"kat_id": "5", "kategori": "ALAT PELINDUNG DIRI", "questions": [
-        {"id": "5a", "text": "Apakah pekerja perusahaan diberi Alat Pelindung Diri (PPE) yang tepat ?", "has_file": True, "file_label": "Berikan daftar Matriks APD"},
-        {"id": "5b", "text": "Apakah perusahaan melakukan pengawasan memastikan APD (PPE) dipakai dan dipelihara ?", "has_file": False},
-        {"id": "5c", "text": "Apakah perusahaan memberikan pelatihan penggunaan APD (PPE) ?", "has_file": False}
-    ]},
-    {"kat_id": "6", "kategori": "PROGRAM ORIENTASI PEKERJA", "questions": [
-        {"id": "6a", "text": "Apakah ada orientasi kerja bagi pekerja baru ?", "has_file": False},
-        {"id": "6b", "text": "Apakah program orientasi tersebut dilakukan bimbingan dengan instruksi tertulis ?", "has_file": False},
-        {"id": "6c", "text": "Apakah orientasi terencana dan dilakukan observasi dan evaluasi ?", "has_file": True, "file_label": "Lampirkan program orientasi pekerja"}
-    ]},
-    {"kat_id": "7", "kategori": "PROGRAM HSE MEETING", "questions": [
-        {"id": "7a", "text": "Apakah perusahaan menyelenggarakan sendiri HSE Meeting berkala ?", "has_file": False},
-        {"id": "7b", "text": "Apakah topik setiap HSE Meeting dibicarakan bergiliran ?", "has_file": False},
-        {"id": "7c", "text": "Apakah HSE Meeting dihadiri oleh pimpinan Kontraktor ?", "has_file": False}
-    ]},
-    {"kat_id": "8", "kategori": "PROGRAM INSPEKSI K3LH", "questions": [
-        {"id": "8a", "text": "Apakah perusahaan telah mempunyai program inspeksi K3LH tertulis ?", "has_file": False},
-        {"id": "8b", "text": "Apakah hasil inspeksi K3LH ditindak lanjuti dengan perbaikan-perbaikan ?", "has_file": False},
-        {"id": "8c", "text": "Apakah rekomendasi temuan dan tindakan perbaikannya ?", "has_file": True, "file_label": "Lampirkan program inspeksi K3LH"}
-    ]},
-    {"kat_id": "9", "kategori": "MANAJEMEN PERALATAN DAN MATERIAL", "questions": [
-        {"id": "9a", "text": "Apakah perusahaan mempunyai program pemeriksaan peralatan dan material ?", "has_file": False},
-        {"id": "9b", "text": "Apakah semua hasil pemeriksaan dan tindak lanjut didokumentasikan ?", "has_file": False}
-    ]},
-    {"kat_id": "10", "kategori": "PROSEDUR PELAPORAN KECELAKAAN", "questions": [
-        {"id": "10a", "text": "Apakah perusahaan mempunyai prosedur pelaporan dan penyelidikan kecelakaan ?", "has_file": True, "file_label": "Lampirkan copy prosedur pelaporan dan alur komunikasi"}
-    ]},
-    {"kat_id": "11", "kategori": "PROSEDUR KERJA DAN TANGGAP DARURAT", "questions": [
-        {"id": "11a", "text": "Apakah prosedur kerja tertulis dan Tanggap Darurat telah ditetapkan ?", "has_file": True, "file_label": "Lampirkan copy Prosedur Kerja & Tanggap Darurat"},
-        {"id": "11b", "text": "Apakah ada prosedur yang mewajibkan penyediaan obat-obatan P3K ?", "has_file": False},
-        {"id": "11c", "text": "Apakah sudah ada pelatihan atau simulasi Tanggap Darurat ?", "has_file": True, "file_label": "Lampirkan bukti simulasi Tanggap Darurat"}
-    ]},
-    {"kat_id": "12", "kategori": "KESEHATAN KERJA", "questions": [
-        {"id": "12a", "text": "Apakah perusahaan mempunyai peraturan tentang kebersihan tempat kerja ?", "has_file": False},
-        {"id": "12b", "text": "Apakah peraturan tersebut disosialisasikan kepada pekerja ?", "has_file": True, "file_label": "Lampirkan bukti sosialisasi kebersihan tempat kerja"}
-    ]},
-    {"kat_id": "13", "kategori": "PENGELOLAAN LINGKUNGAN", "questions": [
-        {"id": "13a", "text": "Apakah perusahaan telah mempunyai prosedur pembuangan sampah & limbah ?", "has_file": False},
-        {"id": "13b", "text": "Apakah dilakukan pengawasan penampungan oli bekas / bahan kimia ?", "has_file": False},
-        {"id": "13c", "text": "Apakah bekerjasama dengan pihak ke-3 berizin untuk pengangkutan limbah B3 ?", "has_file": False}
-    ]},
-    {"kat_id": "14", "kategori": "DATA DAN STATISTIK", "questions": [
-        {"id": "14a", "text": "Apakah perusahaan mencatat data kecelakaan kerja (Fatal, LTI, MTI, Nearmiss, dll) ?", "has_file": False},
-        {"id": "14b", "text": "Apakah data kecelakaan kerja telah dijadikan statistik acuan pencegahan ?", "has_file": False},
-        {"id": "14c", "text": "Statistik Kecelakaan Kerja", "has_file": True, "file_label": "Lampirkan statistik kecelakaan periode 1 tahun terakhir"}
-    ]}
+    {
+        "kat_id": "1",
+        "kategori": "PERNYATAAN KEBIJAKAN",
+        "questions": [
+            {"id": "1a", "text": "Apakah perusahaan mempunyai Kebijakan tertulis tentang K3 dan Lingkungan ?", "has_file": True, "file_label": "Lampirkan copy Kebijakan K3 & Lingkungan"},
+            {"id": "1b", "text": "Apakah manajemen perusahaan bertanggung jawab atas kinerja K3 dan Lingkungan ?", "has_file": False},
+            {"id": "1c", "text": "Apakah kebijakan K3 & Lingkungan itu dikomunikasikan kepada pekerja di perusahaan ?", "has_file": False}
+        ]
+    },
+    {
+        "kat_id": "2",
+        "kategori": "ORGANISASI KESELAMATAN KERJA",
+        "questions": [
+            {"id": "2a", "text": "Apakah di dalam struktur organisasi, perusahaan mempunyai HSE atau Petugas K3L ?", "has_file": False},
+            {"id": "2b", "text": "Apakah perusahaan telah mempunyai job description HSE atau Petugas K3L ?", "has_file": True, "file_label": "Lampirkan copy job description dari HSE / Petugas K3L"},
+            {"id": "2c", "text": "Apakah HSE atau Petugas K3L telah mempunyai program kerja ?", "has_file": True, "file_label": "Bila Ya, lampirkan copy program kerja HSE / Petugas K3L"}
+        ]
+    },
+    {
+        "kat_id": "3",
+        "kategori": "PERATURAN DASAR KESELAMATAN KERJA",
+        "questions": [
+            {"id": "3a", "text": "Apakah perusahaan telah mempunyai Pedoman / Peraturan Dasar Keselamatan Kerja tertulis antara lain memberikan pedoman tentang tangga, perancah (scafolding), angkutan, alat berat, bahan kimia atau pekerjaan berbahaya lainnya ?", "has_file": True, "file_label": "Lampirkan copy Pedoman / Peraturan Dasar K3"},
+            {"id": "3b", "text": "Apakah Peraturan Dasar K3 dijadikan pedoman dan disosialisasikan kepada pekerja ?", "has_file": False}
+        ]
+    },
+    {
+        "kat_id": "4",
+        "kategori": "PROGRAM PELATIHAN KESELAMATAN KERJA",
+        "questions": [
+            {"id": "4a", "text": "Adakah perusahaan memberikan pelatihan K3 kepada personil perusahaan ?", "has_file": True, "file_label": "Berikan data pelatihan (daftar hadir / sertifikat pelatihan)"},
+            {"id": "4b", "text": "Apakah personil pada pekerjaan khusus (welder pada pipa bertekanan tinggi, operator crane, forklift, pemanjat tower dsb) telah menerima pelatihan dari PJK3 dan mempunyai sertifikat resmi ?", "has_file": True, "file_label": "Lampirkan copy sertifikat resmi"},
+            {"id": "4c", "text": "Apakah pelatihan pekerja telah dijadwalkan termasuk pelatihan penyegaran ?", "has_file": False}
+        ]
+    },
+    {
+        "kat_id": "5",
+        "kategori": "ALAT PELINDUNG DIRI",
+        "questions": [
+            {"id": "5a", "text": "Apakah pekerja perusahaan diberi Alat Pelindung Diri (PPE) yang tepat.", "has_file": True, "file_label": "Berikan daftar Matriks APD pekerja"},
+            {"id": "5b", "text": "Apakah perusahaan melakukan pengawasan memastikan APD (PPE) dipakai dan dipelihara ?", "has_file": False},
+            {"id": "5c", "text": "Apakah perusahaan memberikan pelatihan penggunaan APD (PPE) bagi pekerja perusahaan ?", "has_file": False}
+        ]
+    },
+    {
+        "kat_id": "6",
+        "kategori": "PROGRAM ORIENTASI PEKERJA",
+        "questions": [
+            {"id": "6a", "text": "Apakah ada orientasi kerja bagi pekerja baru atau pekerja yang baru dialih tugaskan atau yang memangku jabatan baru ?", "has_file": False},
+            {"id": "6b", "text": "Apakah program orientasi tersebut dilakukan bimbingan dengan instruksi tertulis ?", "has_file": False},
+            {"id": "6c", "text": "Apakah orientasi terencana dan dilakukan observasi dan evaluasi ?", "has_file": True, "file_label": "Lampirkan program orientasi pekerja perusahaan jika ada"}
+        ]
+    },
+    {
+        "kat_id": "7",
+        "kategori": "PROGRAM HSE MEETING",
+        "questions": [
+            {"id": "7a", "text": "Apakah perusahaan menyelenggarakan sendiri HSE Meeting berkala?", "has_file": False},
+            {"id": "7b", "text": "Apakah topik setiap HSE Meeting dibicarakan bergiliran ?", "has_file": False},
+            {"id": "7c", "text": "Apakah HSE Meeting dihadiri oleh pimpinan Kontraktor ?", "has_file": False}
+        ]
+    },
+    {
+        "kat_id": "8",
+        "kategori": "PROGRAM INSPEKSI KESELAMATAN, KESEHATAN KERJA, DAN LINGKUNGAN",
+        "questions": [
+            {"id": "8a", "text": "Apakah perusahaan telah mempunyai program inspeksi K3L tertulis dan melakukan pemeriksaan K3L ?", "has_file": False},
+            {"id": "8b", "text": "Apakah hasil inspeksi K3L ditindak lanjuti dengan perbaikan-perbaikan ?", "has_file": False},
+            {"id": "8c", "text": "Apakah rekomendasi temuan dan tindakan perbaikannya?", "has_file": True, "file_label": "Lampirkan program inspeksi K3L (bila ada)"}
+        ]
+    },
+    {
+        "kat_id": "9",
+        "kategori": "MANAJEMEN PERALATAN DAN MATERIAL",
+        "questions": [
+            {"id": "9a", "text": "Apakah perusahaan mempunyai program pemeriksaan peralatan dan material yang digunakan perusahaan seperti mesin las, mobil angkutan pekerja dan barang, alat pemadam api, forklift, dsb ?", "has_file": False},
+            {"id": "9b", "text": "Apakah semua hasil pemeriksaan dan tindak lanjut didokumentasikan ?", "has_file": False}
+        ]
+    },
+    {
+        "kat_id": "10",
+        "kategori": "PROSEDUR PELAPORAN & PENYELIDIKAN KECELAKAAN",
+        "questions": [
+            {"id": "10a", "text": "Apakah perusahaan mempunyai prosedur pelaporan dan penyelidikan kecelakaan antara lain tentang alur pelaporan sampai investigasi kerjadian dan komunikasi pelaporan kecelakaan ?", "has_file": True, "file_label": "Lampirkan copy prosedur pelaporan dan alur komunikasinya"}
+        ]
+    },
+    {
+        "kat_id": "11",
+        "kategori": "PROSEDUR KERJA DAN TANGGAP DARURAT",
+        "questions": [
+            {"id": "11a", "text": "Apakah prosedur kerja tertulis dari pekerjaan-pekerjaan tertentu dan Tanggap Darurat telah ditetapkan ?", "has_file": True, "file_label": "Lampirkan copy Prosedur Kerja & Tanggap Darurat"},
+            {"id": "11b", "text": "Apakah ada prosedur yang mewajibkan perusahaan menyediakan obat-obatan P3K ditempat kerja ?", "has_file": False},
+            {"id": "11c", "text": "Apakah sudah ada pelatihan atau simulasi Tanggap Darurat ?", "has_file": True, "file_label": "Lampirkan bukti simulasi Tanggap Darurat"}
+        ]
+    },
+    {
+        "kat_id": "12",
+        "kategori": "KESEHATAN KERJA",
+        "questions": [
+            {"id": "12a", "text": "Apakah perusahaan mempunyai peraturan tentang pemeliharaan kebersihan tempat kerja?", "has_file": False},
+            {"id": "12b", "text": "Apakah peraturan tersebut disosialisasikan kepada pekerja ?", "has_file": True, "file_label": "Lampirkan bukti sosialisasi kebersihan tempat kerja"}
+        ]
+    },
+    {
+        "kat_id": "13",
+        "kategori": "PENGELOLAAN LINGKUNGAN",
+        "questions": [
+            {"id": "13a", "text": "Apakah perusahaan telah mempunyai prosedur pembuangan sampah dan pengendalian bahan kimia berbahaya?", "has_file": False},
+            {"id": "13b", "text": "Apakah dilakukan pengawasan memastikan prosedur pembuangan sampah dipatuhi, oli bekas dan bahan kimia berbahaya ditampung secara khusus serta tidak membakar sampah sembarangan ?", "has_file": False},
+            {"id": "13c", "text": "Apakah perusahaan sudah berkerjasama dengan pihak ke 3 yang berizin untuk mengangkut dan mengelola limbah B3 yang dihasilkan perusahaan", "has_file": False}
+        ]
+    },
+    {
+        "kat_id": "14",
+        "kategori": "DATA DAN STATISTIK",
+        "questions": [
+            {"id": "14a", "text": "Apakah perusahaan mencatat data kecelakaan kerja perusahaan seperti :\n- Fatal (Kematian)\n- LTI (Hilang Hari Kerja)\n- MTI (Berobat Jalan)\n- Nearmiss (Hampir Celaka)\n- dll ?", "has_file": False},
+            {"id": "14b", "text": "Apakah data kecelakaan kerja telah dijadikan statistik sebagai acuan untuk pencegahan kecelakaan?", "has_file": False},
+            {"id": "14c", "text": "Statistik Kecelakaan Kerja (1 Tahun Terakhir)", "has_file": True, "file_label": "Lampirkan statistik kecelakaan periode 1 tahun terakhir"}
+        ]
+    }
 ]
 
 # ---------------------------------------------------------
@@ -262,7 +319,7 @@ if admin_pass == ADMIN_PASSWORD:
                 st.sidebar.error(f"Error: {e}")
 
 # ---------------------------------------------------------
-# SISTEM REGISTRASI MANDIRI VENDOR (DYNAMIC URL)
+# SISTEM REGISTRASI MANDIRI VENDOR (DYNAMIC URL & TELEGRAM)
 # ---------------------------------------------------------
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
@@ -299,7 +356,6 @@ if not st.session_state['authenticated']:
                         
                         t_sheet.append_row([new_token, reg_vendor_name, exp_date, "Aktif"])
                         
-                        # Deteksi URL Aplikasi Secara Otomatis
                         base_url = get_current_app_url()
                         share_url = f"{base_url}/?token={new_token}"
                         
@@ -521,7 +577,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
 
                     status_emoji = "✅" if score_pct >= 70.0 else "❌"
                     notif_text = (
-                        f"🚨 <b>PENGAJUAN CSMS BARU</b>\n\n"
+                        f"🚨 <b>PENGAJUAN CSMS BARU (FM/QHE/0127 rev. 2)</b>\n\n"
                         f"🏢 <b>Vendor:</b> {nama_vendor}\n"
                         f"📅 <b>Tgl Pengisian:</b> {tgl_update}\n"
                         f"👤 <b>Penanggung Jawab K3:</b> {nama_pj}\n"
@@ -538,7 +594,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                             cap = f"📎 <b>Lampiran [{q_id}]</b> - {nama_vendor}"
                             send_telegram_document(bot_token, chat_id, file_b, dest_fn, cap)
 
-                    pdf_cap = f"📄 <b>PDF RINGKASAN CSMS</b> - {nama_vendor}"
+                    pdf_cap = f"📄 <b>PDF RINGKASAN CSMS (rev. 2)</b> - {nama_vendor}"
                     send_telegram_document(bot_token, chat_id, pdf_bytes, pdf_filename, pdf_cap)
 
                 st.session_state['authenticated'] = False
