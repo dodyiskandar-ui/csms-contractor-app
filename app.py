@@ -55,14 +55,16 @@ def send_telegram_document(bot_token, chat_id, file_bytes, filename, caption="")
         return None
 
 # ---------------------------------------------------------
-# FUNGSI PENGIRIMAN EMAIL LINK UNIK KE VENDOR (SMTP)
+# FUNGSI PENGIRIMAN EMAIL LINK UNIK (SMTP + GMAIL APP PASSWORD)
 # ---------------------------------------------------------
 def send_token_email(receiver_email, vendor_name, share_url, exp_date):
+    if "email" not in st.secrets:
+        st.error("⚠️ Konfigurasi [email] belum ditambahkan pada Streamlit Secrets!")
+        return False
+        
     try:
-        if "email" not in st.secrets:
-            return False
         smtp_server = st.secrets["email"]["smtp_server"]
-        smtp_port = st.secrets["email"]["smtp_port"]
+        smtp_port = int(st.secrets["email"]["smtp_port"])
         sender_email = st.secrets["email"]["sender_email"]
         sender_password = st.secrets["email"]["sender_password"]
 
@@ -75,14 +77,14 @@ def send_token_email(receiver_email, vendor_name, share_url, exp_date):
         <html>
           <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
             <div style="max-width: 550px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px; background-color: #ffffff;">
-              <h2 style="color: #1E3A8A; text-align: center;">Prakualifikasi CSMS Vendor</h2>
+              <h2 style="color: #1E3A8A; text-align: center; margin-top: 0;">Prakualifikasi CSMS Vendor</h2>
               <hr style="border: 0; border-top: 1px solid #eeeeee;">
               <p>Yth. <b>{vendor_name}</b>,</p>
               <p>Terima kasih telah melakukan registrasi. Berikut adalah Link Unik pengisian Prakualifikasi CSMS perusahaan Anda:</p>
               <div style="text-align: center; margin: 25px 0;">
-                <a href="{share_url}" style="background-color: #1E3A8A; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">Buka Formulir CSMS Sekarang</a>
+                <a href="{share_url}" style="background-color: #1E3A8A; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">Buka Formulir CSMS Sekarang</a>
               </div>
-              <p style="font-size: 12px; color: #555;">Atau salin tautan berikut ke browser Anda:<br/><a href="{share_url}">{share_url}</a></p>
+              <p style="font-size: 12px; color: #555;">Atau salin tautan berikut ke browser Anda:<br/><a href="{share_url}" style="color: #1E3A8A;">{share_url}</a></p>
               <p style="font-size: 12px; color: #d97706; font-weight: bold;">📌 Catatan: Link ini berlaku 7 hari (s.d {exp_date}) dan otomatis hangus setelah 1 kali submit.</p>
               <hr style="border: 0; border-top: 1px solid #eeeeee;">
               <p style="font-size: 11px; color: #999; text-align: center;">Pesan otomatis oleh Sistem CSMS. Mohon tidak membalas email ini.</p>
@@ -97,7 +99,8 @@ def send_token_email(receiver_email, vendor_name, share_url, exp_date):
             server.login(sender_email, sender_password)
             server.send_message(msg)
         return True
-    except Exception:
+    except Exception as e:
+        st.error(f"⚠️ Gagal Mengirim Email: {e}")
         return False
 
 # ---------------------------------------------------------
@@ -125,7 +128,7 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     normal_body = ParagraphStyle('NormalBody', parent=styles['Normal'], fontSize=8, leading=10)
     center_body = ParagraphStyle('CenterBody', parent=styles['Normal'], fontSize=8, leading=10, alignment=1)
     
-    # Kriteria Kesimpulan Evaluasi
+    # Kriteria Kesimpulan Evaluasi (Skor >= 70%: Dapat diterima, < 70%: Tidak dapat diterima)
     if score_pct >= 70.0:
         kesimpulan_text = "<font color='#166534'><b>Dapat diterima</b></font>"
     else:
@@ -262,7 +265,7 @@ sections = [
 ]
 
 # ---------------------------------------------------------
-# MENU SIDEBAR ADMIN (MANUAL GENERATOR JIKA DIBUTUHKAN)
+# MENU SIDEBAR ADMIN
 # ---------------------------------------------------------
 st.sidebar.title("🔐 Panel Admin HSE")
 admin_pass = st.sidebar.text_input("Password Admin", type="password")
@@ -297,8 +300,9 @@ if admin_pass == ADMIN_PASSWORD:
                 full_share_url = f"{base_url}/?token={new_token}"
                 
                 if input_vemail:
-                    send_token_email(input_vemail, input_vname, full_share_url, exp_date)
-                    st.sidebar.success("Link berhasil dikirim ke Email Vendor!")
+                    sent = send_token_email(input_vemail, input_vname, full_share_url, exp_date)
+                    if sent:
+                        st.sidebar.success("Link berhasil dikirim ke Email Vendor!")
                 st.sidebar.code(full_share_url)
             except Exception as e:
                 st.sidebar.error(f"Error: {e}")
@@ -344,7 +348,7 @@ if not st.session_state['authenticated']:
                         base_url = "https://csms-contractor-app.streamlit.app"
                         share_url = f"{base_url}/?token={new_token}"
                         
-                        # Kirim Email otomatis
+                        # Kirim Email Otomatis (SMTP)
                         send_token_email(reg_vendor_email, reg_vendor_name, share_url, exp_date)
                         
                         # Notif ke Telegram Admin
@@ -414,7 +418,7 @@ if not st.session_state['authenticated']:
     st.stop()
 
 # ---------------------------------------------------------
-# FORM CSMS (PENOMORAN SOAL BERURUTAN 1 S.D 37 & TANPA [1a])
+# FORM CSMS (PENOMORAN SOAL BERURUTAN 1 S.D 37)
 # ---------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.success(f"Token Aktif:\n`{st.session_state.get('active_token')}`\n({st.session_state.get('assigned_vendor')})")
@@ -438,14 +442,12 @@ file_status = {}
 q_counter = 0
 
 for section in sections:
-    # Tampilkan Nama Kategori Tanpa Angka Bab Ganda
     st.markdown(f"### {section['kategori']}")
     
     for q in section['questions']:
         q_counter += 1
         q_id = q['id']
         
-        # Penomoran Soal Rapi Berurutan (1, 2, 3...) Tanpa Awalan [1a]
         st.markdown(f"**{q_counter}. {q['text']}**")
         col_ans, col_file = st.columns([1, 2])
         
@@ -483,13 +485,11 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 total_ya = sum(1 for v in responses.values() if v == "Ya")
                 score_pct = (total_ya / q_counter) * 100
 
-                # Penentuan Status Kelulusan
                 if score_pct >= 70.0:
                     status_eval = "Dapat diterima"
                 else:
                     status_eval = "Tidak dapat diterima"
 
-                # Ringkasan Jawaban dengan Nomor Urut 1, 2, 3...
                 summary_list = []
                 num_idx = 1
                 for section in sections:
@@ -508,7 +508,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 pdf_bytes = generate_csms_pdf(nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, summary_list)
                 pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
 
-                # 1. Simpan ke Google Sheets (Sheet1)
+                # 1. Simpan Rekapitulasi ke Google Sheets
                 gc = get_gsheets()
                 spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
                 sh = gc.open_by_key(spreadsheet_id)
@@ -577,7 +577,6 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                     pdf_cap = f"📄 <b>PDF RINGKASAN CSMS</b> - {nama_vendor}"
                     send_telegram_document(bot_token, chat_id, pdf_bytes, pdf_filename, pdf_cap)
 
-                # Reset status login
                 st.session_state['authenticated'] = False
                 st.session_state.pop('active_token', None)
 
