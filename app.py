@@ -21,7 +21,7 @@ from reportlab.lib import colors
 st.set_page_config(page_title="Prakualifikasi Kontraktor CSMS", layout="wide")
 
 query_params = st.query_params
-url_token = query_params.get("token", "")
+url_token = query_params.get("token", "").strip().upper()
 
 st.title("📋 Form Prakualifikasi Kontraktor (CSMS)")
 st.caption("Contractor Safety Management System - FM/QHE/0127 rev. 2")
@@ -52,7 +52,7 @@ def send_telegram_document(bot_token, chat_id, file_bytes, filename, caption="")
         return None
 
 # ---------------------------------------------------------
-# FUNGSI INTEGRASI GOOGLE SHEETS
+# FUNGSI INTEGRASI GOOGLE SHEETS & VERIFIKASI TOKEN
 # ---------------------------------------------------------
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
@@ -63,8 +63,47 @@ def get_gsheets():
     gc = gspread.authorize(creds)
     return gc
 
+def verify_token_credentials(input_token):
+    try:
+        gc = get_gsheets()
+        spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
+        sh = gc.open_by_key(spreadsheet_id)
+        
+        try:
+            t_sheet = sh.worksheet("Token_Akses")
+            records = t_sheet.get_all_records()
+        except Exception:
+            records = []
+        
+        matched = None
+        matched_row_idx = None
+        for idx, row in enumerate(records, start=2):
+            if str(row.get("Token")).strip().upper() == input_token:
+                matched = row
+                matched_row_idx = idx
+                break
+        
+        if not matched:
+            return False, "⛔ Kode Token tidak terdaftar atau Salah!", None, None
+        
+        status = matched.get("Status")
+        exp_date_str = str(matched.get("Expired Date"))
+        vendor_name_assigned = matched.get("Nama Vendor")
+        
+        today = datetime.date.today()
+        exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date() if exp_date_str else today
+        
+        if status != "Aktif":
+            return False, "⛔ Kode Token ini sudah pernah digunakan (Hangus)!", None, None
+        elif today > exp_date:
+            return False, f"⛔ Kode Token ini sudah Kadaluarsa (Expired pada {exp_date_str})!", None, None
+        else:
+            return True, "Valid", matched_row_idx, vendor_name_assigned
+    except Exception as e:
+        return False, f"Gagal memverifikasi token: {e}", None, None
+
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS (STATUS PENGAJUAN DIHILANGKAN)
+# FUNGSI GENERATE PDF CSMS
 # ---------------------------------------------------------
 def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, summary_list):
     buffer = io.BytesIO()
@@ -88,7 +127,6 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
         HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=12)
     ]
     
-    # Header Tabel Informasi (Status Pengajuan Hilang)
     info_data = [
         [Paragraph("<b>Nama Vendor/Supplier</b>", normal_body), Paragraph(f": {nama_vendor}", normal_body),
          Paragraph("<b>Tanggal Pengisian</b>", normal_body), Paragraph(f": {tgl_update}", normal_body)],
@@ -319,11 +357,25 @@ if admin_pass == ADMIN_PASSWORD:
                 st.sidebar.error(f"Error: {e}")
 
 # ---------------------------------------------------------
-# SISTEM REGISTRASI MANDIRI VENDOR (DYNAMIC URL & TELEGRAM)
+# AUTO-VERIFIKASI URL TOKEN JIKA DIKLIK VENDOR (AUTO-LOGIN)
 # ---------------------------------------------------------
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 
+if not st.session_state['authenticated'] and url_token:
+    is_valid, msg, row_idx, v_name = verify_token_credentials(url_token)
+    if is_valid:
+        st.session_state['authenticated'] = True
+        st.session_state['active_token'] = url_token
+        st.session_state['token_row_idx'] = row_idx
+        st.session_state['assigned_vendor'] = v_name
+        st.rerun()
+    else:
+        st.error(msg)
+
+# ---------------------------------------------------------
+# TAB REGISTRASI & VERIFIKASI MANUAL (JIKA TANPA TOKEN)
+# ---------------------------------------------------------
 if not st.session_state['authenticated']:
     st.subheader("🔑 Pendaftaran & Verifikasi Akses Vendor (CSMS)")
     
@@ -392,53 +444,21 @@ if not st.session_state['authenticated']:
             if not input_token:
                 st.error("Silakan masukkan Kode Token terlebih dahulu!")
             else:
-                try:
-                    gc = get_gsheets()
-                    spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
-                    sh = gc.open_by_key(spreadsheet_id)
-                    
-                    try:
-                        t_sheet = sh.worksheet("Token_Akses")
-                        records = t_sheet.get_all_records()
-                    except Exception:
-                        records = []
-                    
-                    matched = None
-                    matched_row_idx = None
-                    for idx, row in enumerate(records, start=2):
-                        if str(row.get("Token")).strip().upper() == input_token:
-                            matched = row
-                            matched_row_idx = idx
-                            break
-                    
-                    if not matched:
-                        st.error("⛔ Kode Token tidak terdaftar atau Salah!")
-                    else:
-                        status = matched.get("Status")
-                        exp_date_str = str(matched.get("Expired Date"))
-                        vendor_name_assigned = matched.get("Nama Vendor")
-                        
-                        today = datetime.date.today()
-                        exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date() if exp_date_str else today
-                        
-                        if status != "Aktif":
-                            st.error("⛔ Kode Token ini sudah pernah digunakan (Hangus)!")
-                        elif today > exp_date:
-                            st.error(f"⛔ Kode Token ini sudah Kadaluarsa (Expired pada {exp_date_str})!")
-                        else:
-                            st.session_state['authenticated'] = True
-                            st.session_state['active_token'] = input_token
-                            st.session_state['token_row_idx'] = matched_row_idx
-                            st.session_state['assigned_vendor'] = vendor_name_assigned
-                            st.success("✅ Token Valid! Membuka Formulir CSMS...")
-                            st.rerun()
-                except Exception as e:
-                    st.error(f"Gagal memverifikasi token: {e}")
+                is_valid, msg, row_idx, v_name = verify_token_credentials(input_token)
+                if is_valid:
+                    st.session_state['authenticated'] = True
+                    st.session_state['active_token'] = input_token
+                    st.session_state['token_row_idx'] = row_idx
+                    st.session_state['assigned_vendor'] = v_name
+                    st.success("✅ Token Valid! Membuka Formulir CSMS...")
+                    st.rerun()
+                else:
+                    st.error(msg)
     
     st.stop()
 
 # ---------------------------------------------------------
-# FORM CSMS (PENOMORAN SOAL BERURUTAN 1 S.D 37)
+# FORM CSMS (PEMBATASAN ATTACHMENT PDF & MAKSIMAL 5MB)
 # ---------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.success(f"Token Aktif:\n`{st.session_state.get('active_token')}`\n({st.session_state.get('assigned_vendor')})")
@@ -460,6 +480,7 @@ responses = {}
 uploaded_files_dict = {}
 file_status = {}
 q_counter = 0
+file_error_flag = False
 
 for section in sections:
     st.markdown(f"### {section['kategori']}")
@@ -478,10 +499,18 @@ for section in sections:
         with col_file:
             if q.get('has_file'):
                 if ans == "Ya":
-                    up_file = st.file_uploader(f"📎 {q.get('file_label')}", key=f"file_{q_id}")
+                    # Batas khusus ekstensi PDF & Keterangan Max 5MB
+                    up_file = st.file_uploader(f"📎 {q.get('file_label')} (Format PDF, Maks. 5MB)", type=["pdf"], key=f"file_{q_id}")
                     if up_file:
-                        uploaded_files_dict[q_id] = up_file
-                        file_status[q_id] = f"Ada ({up_file.name})"
+                        # Pengecekan Ukuran File Maximum 5MB (5 * 1024 * 1024 bytes)
+                        if up_file.size > 5 * 1024 * 1024:
+                            st.error(f"⚠️ File **{up_file.name}** melebihi batas 5MB! Harap unggah file PDF yang lebih kecil.")
+                            uploaded_files_dict[q_id] = None
+                            file_status[q_id] = "File Melebihi Batas 5MB"
+                            file_error_flag = True
+                        else:
+                            uploaded_files_dict[q_id] = up_file
+                            file_status[q_id] = f"Ada ({up_file.name})"
                     else:
                         uploaded_files_dict[q_id] = None
                         file_status[q_id] = "Ada (Belum diunggah)"
@@ -499,6 +528,8 @@ for section in sections:
 if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     if not nama_vendor:
         st.error("⚠️ Harap isi Nama Perusahaan terlebih dahulu!")
+    elif file_error_flag:
+        st.error("⚠️ Ada file lampiran yang melebihi batas ukuran 5MB. Harap periksa dan unggah kembali file yang sesuai.")
     else:
         with st.spinner("Menyimpan data CSMS & Mengubah Status Token menjadi Hangus..."):
             try:
