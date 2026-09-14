@@ -3,6 +3,12 @@ import pandas as pd
 import datetime
 import io
 import requests
+import random
+import string
+import urllib.parse
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -13,46 +19,86 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ---------------------------------------------------------
-# KONFIGURASI HALAMAN
+# KONFIGURASI HALAMAN & PARAMETER URL
 # ---------------------------------------------------------
 st.set_page_config(page_title="Prakualifikasi Kontraktor CSMS", layout="wide")
+
+query_params = st.query_params
+url_token = query_params.get("token", "")
+
 st.title("📋 Form Prakualifikasi Kontraktor (CSMS)")
 st.caption("Contractor Safety Management System - FM/QHE/0127 rev. 1")
 st.divider()
+
+ADMIN_PASSWORD = "ADMINCSMS2026"
 
 # ---------------------------------------------------------
 # FUNGSI INTEGRASI TELEGRAM BOT API
 # ---------------------------------------------------------
 def send_telegram_message(bot_token, chat_id, text):
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML"
-    }
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     try:
         response = requests.post(url, json=payload, timeout=15)
         return response.json()
-    except Exception as e:
-        st.error(f"Gagal koneksi Telegram Message: {e}")
+    except Exception:
         return None
 
 def send_telegram_document(bot_token, chat_id, file_bytes, filename, caption=""):
     url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
-    files = {
-        "document": (filename, file_bytes)
-    }
-    data = {
-        "chat_id": chat_id,
-        "caption": caption,
-        "parse_mode": "HTML"
-    }
+    files = {"document": (filename, file_bytes)}
+    data = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"}
     try:
         response = requests.post(url, data=data, files=files, timeout=30)
         return response.json()
-    except Exception as e:
-        st.error(f"Gagal unggah file ke Telegram ({filename}): {e}")
+    except Exception:
         return None
+
+# ---------------------------------------------------------
+# FUNGSI PENGIRIMAN EMAIL LINK UNIK KE VENDOR (SMTP)
+# ---------------------------------------------------------
+def send_token_email(receiver_email, vendor_name, share_url, exp_date):
+    try:
+        if "email" not in st.secrets:
+            return False
+        smtp_server = st.secrets["email"]["smtp_server"]
+        smtp_port = st.secrets["email"]["smtp_port"]
+        sender_email = st.secrets["email"]["sender_email"]
+        sender_password = st.secrets["email"]["sender_password"]
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"🔐 Undangan Pengisian CSMS - {vendor_name}"
+        msg["From"] = f"CSMS System <{sender_email}>"
+        msg["To"] = receiver_email
+
+        html_body = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+            <div style="max-width: 550px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px; background-color: #ffffff;">
+              <h2 style="color: #1E3A8A; text-align: center;">Prakualifikasi CSMS Vendor</h2>
+              <hr style="border: 0; border-top: 1px solid #eeeeee;">
+              <p>Yth. <b>{vendor_name}</b>,</p>
+              <p>Terima kasih telah melakukan registrasi. Berikut adalah Link Unik pengisian Prakualifikasi CSMS perusahaan Anda:</p>
+              <div style="text-align: center; margin: 25px 0;">
+                <a href="{share_url}" style="background-color: #1E3A8A; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">Buka Formulir CSMS Sekarang</a>
+              </div>
+              <p style="font-size: 12px; color: #555;">Atau salin tautan berikut ke browser Anda:<br/><a href="{share_url}">{share_url}</a></p>
+              <p style="font-size: 12px; color: #d97706; font-weight: bold;">📌 Catatan: Link ini berlaku 7 hari (s.d {exp_date}) dan otomatis hangus setelah 1 kali submit.</p>
+              <hr style="border: 0; border-top: 1px solid #eeeeee;">
+              <p style="font-size: 11px; color: #999; text-align: center;">Pesan otomatis oleh Sistem CSMS. Mohon tidak membalas email ini.</p>
+            </div>
+          </body>
+        </html>
+        """
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        return True
+    except Exception:
+        return False
 
 # ---------------------------------------------------------
 # FUNGSI INTEGRASI GOOGLE SHEETS
@@ -67,35 +113,30 @@ def get_gsheets():
     return gc
 
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS
+# FUNGSI GENERATE PDF CSMS (RAPID & DILENGKAPI KESIMPULAN)
 # ---------------------------------------------------------
 def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, summary_list):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=36,
-        leftMargin=36,
-        topMargin=36,
-        bottomMargin=36
-    )
-    
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'TitleStyle', parent=styles['Heading1'], fontSize=14, leading=18, alignment=1, textColor=colors.HexColor('#1E3A8A')
-    )
-    subtitle_style = ParagraphStyle(
-        'SubTitleStyle', parent=styles['Normal'], fontSize=9, leading=11, alignment=1, textColor=colors.gray
-    )
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=14, leading=18, alignment=1, textColor=colors.HexColor('#1E3A8A'))
+    subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontSize=9, leading=11, alignment=1, textColor=colors.gray)
     bold_body = ParagraphStyle('BoldBody', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
     normal_body = ParagraphStyle('NormalBody', parent=styles['Normal'], fontSize=8, leading=10)
+    center_body = ParagraphStyle('CenterBody', parent=styles['Normal'], fontSize=8, leading=10, alignment=1)
     
-    elements = []
-    
-    elements.append(Paragraph("HASIL EVALUASI PRAKUALIFIKASI KONTRAKTOR (CSMS)", title_style))
-    elements.append(Paragraph("Contractor Safety Management System - Form Ref: FM/QHE/0127 rev. 1", subtitle_style))
-    elements.append(Spacer(1, 10))
-    elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=12))
+    # Kriteria Kesimpulan Evaluasi
+    if score_pct >= 70.0:
+        kesimpulan_text = "<font color='#166534'><b>Dapat diterima</b></font>"
+    else:
+        kesimpulan_text = "<font color='#DC2626'><b>Tidak dapat diterima</b></font>"
+
+    elements = [
+        Paragraph("HASIL EVALUASI PRAKUALIFIKASI KONTRAKTOR (CSMS)", title_style),
+        Paragraph("Contractor Safety Management System - Form Ref: FM/QHE/0127 rev. 1", subtitle_style),
+        Spacer(1, 10),
+        HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=12)
+    ]
     
     info_data = [
         [Paragraph("<b>Nama Vendor/Supplier</b>", normal_body), Paragraph(f": {nama_vendor}", normal_body),
@@ -103,7 +144,9 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
         [Paragraph("<b>Penanggung Jawab K3</b>", normal_body), Paragraph(f": {nama_pj}", normal_body),
          Paragraph("<b>Kontak/Email</b>", normal_body), Paragraph(f": {kontak_vendor}", normal_body)],
         [Paragraph("<b>Skor Kepatuhan CSMS</b>", normal_body), Paragraph(f": <b>{score_pct:.1f}%</b>", normal_body),
-         Paragraph("<b>Status Pengajuan</b>", normal_body), Paragraph(": TERSIMPAN & TERKIRIM", normal_body)]
+         Paragraph("<b>Status Pengajuan</b>", normal_body), Paragraph(": TERSIMPAN & TERVERIFIKASI", normal_body)],
+        [Paragraph("<b>Kesimpulan Hasil Evaluasi</b>", normal_body), Paragraph(f": {kesimpulan_text}", normal_body),
+         Paragraph("", normal_body), Paragraph("", normal_body)]
     ]
     
     t_info = Table(info_data, colWidths=[120, 150, 110, 140])
@@ -117,19 +160,22 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     elements.append(t_info)
     elements.append(Spacer(1, 12))
     
-    table_data = [
-        [Paragraph("<b>No</b>", bold_body), Paragraph("<b>Pertanyaan Evaluasi CSMS</b>", bold_body), Paragraph("<b>Jawaban</b>", bold_body), Paragraph("<b>Keterangan Lampiran</b>", bold_body)]
-    ]
+    table_data = [[
+        Paragraph("<b>No</b>", ParagraphStyle('HCenter', parent=bold_body, alignment=1)),
+        Paragraph("<b>Pertanyaan Evaluasi CSMS</b>", bold_body),
+        Paragraph("<b>Jawaban</b>", ParagraphStyle('HCenter2', parent=bold_body, alignment=1)),
+        Paragraph("<b>Keterangan Lampiran</b>", bold_body)
+    ]]
     
     for item in summary_list:
         table_data.append([
-            Paragraph(item["No"], normal_body),
+            Paragraph(str(item["No"]), center_body),
             Paragraph(f"<b>[{item['Kategori']}]</b><br/>{item['Pertanyaan']}", normal_body),
-            Paragraph(item["Jawaban"], normal_body),
+            Paragraph(item["Jawaban"], center_body),
             Paragraph(item["Lampiran"], normal_body)
         ])
         
-    t_questions = Table(table_data, colWidths=[30, 320, 60, 110])
+    t_questions = Table(table_data, colWidths=[30, 320, 50, 120])
     t_questions.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -138,33 +184,15 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#9CA3AF')),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F9FAFB')])
     ]))
-    
     elements.append(t_questions)
-    
     doc.build(elements)
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes
 
 # ---------------------------------------------------------
-# INPUT IDENTITAS VENDOR
-# ---------------------------------------------------------
-st.subheader("1. Identitas Perusahaan")
-col1, col2 = st.columns(2)
-with col1:
-    nama_vendor = st.text_input("Nama Perusahaan / Supplier / Vendor")
-    tgl_update = st.date_input("Tanggal Pengisian", datetime.date.today())
-with col2:
-    nama_pj = st.text_input("Penanggung Jawab K3 / HSE Leader")
-    kontak_vendor = st.text_input("Nomor Telepon / Email Kontak")
-
-st.divider()
-
-# ---------------------------------------------------------
 # MASTER DATA SOAL CSMS (14 KATEGORI)
 # ---------------------------------------------------------
-st.subheader("2. Pertanyaan Evaluasi CSMS")
-
 sections = [
     {"kat_id": "1", "kategori": "PERNYATAAN KEBIJAKAN", "questions": [
         {"id": "1a", "text": "Apakah perusahaan mempunyai Kebijakan tertulis tentang K3 dan Lingkungan ?", "has_file": True, "file_label": "Lampirkan copy Kebijakan K3 & Lingkungan"},
@@ -233,81 +261,260 @@ sections = [
     ]}
 ]
 
+# ---------------------------------------------------------
+# MENU SIDEBAR ADMIN (MANUAL GENERATOR JIKA DIBUTUHKAN)
+# ---------------------------------------------------------
+st.sidebar.title("🔐 Panel Admin HSE")
+admin_pass = st.sidebar.text_input("Password Admin", type="password")
+
+if admin_pass == ADMIN_PASSWORD:
+    st.sidebar.success("Mode Admin Aktif")
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("➕ Generate Link Undangan Manual")
+    input_vname = st.sidebar.text_input("Nama Vendor")
+    input_vemail = st.sidebar.text_input("Email Vendor")
+    
+    if st.sidebar.button("Generate & Kirim Link"):
+        if not input_vname:
+            st.sidebar.error("Nama Vendor harus diisi!")
+        else:
+            try:
+                gc = get_gsheets()
+                spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
+                sh = gc.open_by_key(spreadsheet_id)
+                try:
+                    t_sheet = sh.worksheet("Token_Akses")
+                except Exception:
+                    t_sheet = sh.add_worksheet(title="Token_Akses", rows="100", cols="4")
+                    t_sheet.append_row(["Token", "Nama Vendor", "Expired Date", "Status"])
+                
+                rand_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+                new_token = f"K3-{rand_str}"
+                exp_date = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+                t_sheet.append_row([new_token, input_vname, exp_date, "Aktif"])
+                
+                base_url = "https://csms-contractor-app.streamlit.app"
+                full_share_url = f"{base_url}/?token={new_token}"
+                
+                if input_vemail:
+                    send_token_email(input_vemail, input_vname, full_share_url, exp_date)
+                    st.sidebar.success("Link berhasil dikirim ke Email Vendor!")
+                st.sidebar.code(full_share_url)
+            except Exception as e:
+                st.sidebar.error(f"Error: {e}")
+
+# ---------------------------------------------------------
+# SISTEM REGISTRASI MANDIRI VENDOR (SOLUSI 3)
+# ---------------------------------------------------------
+if 'authenticated' not in st.session_state:
+    st.session_state['authenticated'] = False
+
+if not st.session_state['authenticated']:
+    st.subheader("🔑 Pendaftaran & Verifikasi Akses Vendor (CSMS)")
+    
+    tab_reg, tab_token = st.tabs(["📝 Registrasi Mandiri Vendor Baru", "🔑 Punya Kode Token / Link Unik"])
+    
+    with tab_reg:
+        st.info("Bagi Vendor/Kontraktor baru, silakan daftarkan perusahaan Anda untuk mendapatkan Link Pengisian CSMS berdurasi 7 hari.")
+        reg_vendor_name = st.text_input("Nama Perusahaan / Supplier / Vendor (Resmi)")
+        reg_vendor_email = st.text_input("Email Resmi Perusahaan / PIC HSE")
+        
+        if st.button("🚀 Daftarkan & Dapatkan Link CSMS", type="primary"):
+            if not reg_vendor_name or not reg_vendor_email:
+                st.error("Harap isi Nama Perusahaan dan Email Resmi terlebih dahulu!")
+            else:
+                with st.spinner("Memproses registrasi & menerbitkan Token Akses CSMS..."):
+                    try:
+                        gc = get_gsheets()
+                        spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
+                        sh = gc.open_by_key(spreadsheet_id)
+                        
+                        try:
+                            t_sheet = sh.worksheet("Token_Akses")
+                        except Exception:
+                            t_sheet = sh.add_worksheet(title="Token_Akses", rows="100", cols="4")
+                            t_sheet.append_row(["Token", "Nama Vendor", "Expired Date", "Status"])
+                        
+                        rand_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+                        new_token = f"K3-{rand_str}"
+                        exp_date = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+                        
+                        t_sheet.append_row([new_token, reg_vendor_name, exp_date, "Aktif"])
+                        
+                        base_url = "https://csms-contractor-app.streamlit.app"
+                        share_url = f"{base_url}/?token={new_token}"
+                        
+                        # Kirim Email otomatis
+                        send_token_email(reg_vendor_email, reg_vendor_name, share_url, exp_date)
+                        
+                        # Notif ke Telegram Admin
+                        if "telegram" in st.secrets and "bot_token" in st.secrets["telegram"]:
+                            bot_token = st.secrets["telegram"]["bot_token"]
+                            chat_id = st.secrets["telegram"]["chat_id"]
+                            notif = f"🔔 <b>REGISTRASI MANDIRI VENDOR CSMS</b>\n\n🏢 <b>Vendor:</b> {reg_vendor_name}\n📧 <b>Email:</b> {reg_vendor_email}\n🔑 <b>Token:</b> <code>{new_token}</code>\n📅 <b>Expired:</b> {exp_date}"
+                            send_telegram_message(bot_token, chat_id, notif)
+                            
+                        st.success("✅ Registrasi Berhasil!")
+                        st.markdown(f"**Link Pengisian CSMS Anda:**\n[{share_url}]({share_url})")
+                        st.info("📌 Silakan klik link di atas atau periksa inbox email Anda untuk langsung mengisi Formulir CSMS.")
+                    except Exception as e:
+                        st.error(f"Gagal melakukan registrasi: {e}")
+
+    with tab_token:
+        st.info("Jika Anda sudah menerima Kode Token atau mengeklik Link Unik dari Email, verifikasi di sini.")
+        input_token = st.text_input("Masukkan Kode Token CSMS (Contoh: K3-X89A2)", value=url_token).strip().upper()
+        
+        if st.button("🔑 Buka Formulir CSMS"):
+            if not input_token:
+                st.error("Silakan masukkan Kode Token terlebih dahulu!")
+            else:
+                try:
+                    gc = get_gsheets()
+                    spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
+                    sh = gc.open_by_key(spreadsheet_id)
+                    
+                    try:
+                        t_sheet = sh.worksheet("Token_Akses")
+                        records = t_sheet.get_all_records()
+                    except Exception:
+                        records = []
+                    
+                    matched = None
+                    matched_row_idx = None
+                    for idx, row in enumerate(records, start=2):
+                        if str(row.get("Token")).strip().upper() == input_token:
+                            matched = row
+                            matched_row_idx = idx
+                            break
+                    
+                    if not matched:
+                        st.error("⛔ Kode Token tidak terdaftar atau Salah!")
+                    else:
+                        status = matched.get("Status")
+                        exp_date_str = str(matched.get("Expired Date"))
+                        vendor_name_assigned = matched.get("Nama Vendor")
+                        
+                        today = datetime.date.today()
+                        exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date() if exp_date_str else today
+                        
+                        if status != "Aktif":
+                            st.error("⛔ Kode Token ini sudah pernah digunakan (Hangus)!")
+                        elif today > exp_date:
+                            st.error(f"⛔ Kode Token ini sudah Kadaluarsa (Expired pada {exp_date_str})!")
+                        else:
+                            st.session_state['authenticated'] = True
+                            st.session_state['active_token'] = input_token
+                            st.session_state['token_row_idx'] = matched_row_idx
+                            st.session_state['assigned_vendor'] = vendor_name_assigned
+                            st.success("✅ Token Valid! Membuka Formulir CSMS...")
+                            st.rerun()
+                except Exception as e:
+                    st.error(f"Gagal memverifikasi token: {e}")
+    
+    st.stop()
+
+# ---------------------------------------------------------
+# FORM CSMS (PENOMORAN SOAL BERURUTAN 1 S.D 37 & TANPA [1a])
+# ---------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.success(f"Token Aktif:\n`{st.session_state.get('active_token')}`\n({st.session_state.get('assigned_vendor')})")
+
+st.subheader("1. Identitas Perusahaan")
+col1, col2 = st.columns(2)
+with col1:
+    nama_vendor = st.text_input("Nama Perusahaan / Supplier / Vendor", value=st.session_state.get('assigned_vendor', ''))
+    tgl_update = st.date_input("Tanggal Pengisian", datetime.date.today())
+with col2:
+    nama_pj = st.text_input("Penanggung Jawab K3 / HSE Leader")
+    kontak_vendor = st.text_input("Nomor Telepon / Email Kontak")
+
+st.divider()
+
+st.subheader("2. Pertanyaan Evaluasi CSMS")
+
 responses = {}
 uploaded_files_dict = {}
 file_status = {}
-total_questions = 0
+q_counter = 0
 
 for section in sections:
-    st.markdown(f"#### {section['kat_id']}. {section['kategori']}")
+    # Tampilkan Nama Kategori Tanpa Angka Bab Ganda
+    st.markdown(f"### {section['kategori']}")
+    
     for q in section['questions']:
-        total_questions += 1
-        st.markdown(f"**[{q['id']}] {q['text']}**")
+        q_counter += 1
+        q_id = q['id']
+        
+        # Penomoran Soal Rapi Berurutan (1, 2, 3...) Tanpa Awalan [1a]
+        st.markdown(f"**{q_counter}. {q['text']}**")
         col_ans, col_file = st.columns([1, 2])
         
         with col_ans:
-            ans = st.radio(f"Jawaban ({q['id']})", ["Ya", "Tidak"], key=f"ans_{q['id']}", horizontal=True)
-            responses[q['id']] = ans
+            ans = st.radio(f"Jawaban ({q_counter})", ["Ya", "Tidak"], key=f"ans_{q_id}", horizontal=True)
+            responses[q_id] = ans
             
         with col_file:
             if q.get('has_file'):
                 if ans == "Ya":
-                    up_file = st.file_uploader(f"📎 {q.get('file_label')}", key=f"file_{q['id']}")
+                    up_file = st.file_uploader(f"📎 {q.get('file_label')}", key=f"file_{q_id}")
                     if up_file:
-                        uploaded_files_dict[q['id']] = up_file
-                        file_status[q['id']] = f"Ada ({up_file.name})"
+                        uploaded_files_dict[q_id] = up_file
+                        file_status[q_id] = f"Ada ({up_file.name})"
                     else:
-                        uploaded_files_dict[q['id']] = None
-                        file_status[q['id']] = "Ada (Belum diunggah)"
+                        uploaded_files_dict[q_id] = None
+                        file_status[q_id] = "Ada (Belum diunggah)"
                 else:
-                    uploaded_files_dict[q['id']] = None
-                    file_status[q['id']] = "Tidak Ada (N/A)"
+                    uploaded_files_dict[q_id] = None
+                    file_status[q_id] = "Tidak Ada (N/A)"
             else:
-                uploaded_files_dict[q['id']] = None
-                file_status[q['id']] = "-"
+                uploaded_files_dict[q_id] = None
+                file_status[q_id] = "-"
     st.markdown("---")
 
 # ---------------------------------------------------------
-# PROSES SUBMIT FORM
+# PROSES SUBMIT CSMS
 # ---------------------------------------------------------
 if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     if not nama_vendor:
         st.error("⚠️ Harap isi Nama Perusahaan terlebih dahulu!")
     else:
-        with st.spinner("Menyimpan data ke Google Sheets & Mengirimkan berkas ke Telegram..."):
+        with st.spinner("Menyimpan data CSMS & Mengubah Status Token menjadi Hangus..."):
             try:
-                # 1. Hitung Skor CSMS
                 total_ya = sum(1 for v in responses.values() if v == "Ya")
-                score_pct = (total_ya / total_questions) * 100
+                score_pct = (total_ya / q_counter) * 100
 
-                # 2. Susun Ringkasan Data
+                # Penentuan Status Kelulusan
+                if score_pct >= 70.0:
+                    status_eval = "Dapat diterima"
+                else:
+                    status_eval = "Tidak dapat diterima"
+
+                # Ringkasan Jawaban dengan Nomor Urut 1, 2, 3...
                 summary_list = []
+                num_idx = 1
                 for section in sections:
                     for q in section['questions']:
                         q_id = q['id']
                         summary_list.append({
+                            "No": num_idx,
                             "Kategori": section['kategori'],
-                            "No": q_id,
                             "Pertanyaan": q['text'],
                             "Jawaban": responses[q_id],
                             "Lampiran": file_status[q_id]
                         })
+                        num_idx += 1
 
-                # 3. Generate PDF Ringkasan CSMS
                 clean_vendor_name = "".join(c for c in nama_vendor if c.isalnum() or c in (' ', '_', '-')).rstrip()
-                pdf_bytes = generate_csms_pdf(
-                    nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, summary_list
-                )
+                pdf_bytes = generate_csms_pdf(nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, summary_list)
                 pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
 
-                # 4. Simpan Rekapitulasi ke Google Sheets & OTOMATIS TAMBAHKAN HEADER
+                # 1. Simpan ke Google Sheets (Sheet1)
                 gc = get_gsheets()
                 spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
                 sh = gc.open_by_key(spreadsheet_id)
                 worksheet = sh.sheet1
                 
-                # Buat Susunan Header Resmi
-                headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab K3", "Kontak", "Skor CSMS (%)"]
+                headers = ["Timestamp", "Nama Vendor", "Tgl Pengisian", "Penanggung Jawab K3", "Kontak", "Skor CSMS (%)", "Kesimpulan Hasil Evaluasi"]
                 for sec in sections:
                     for q in sec['questions']:
                         headers.append(f"[{q['id']}] Jawaban")
@@ -315,23 +522,20 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                             headers.append(f"[{q['id']}] Status Lampiran")
 
                 all_values = worksheet.get_all_values()
-                
-                # Cek & Otomatis Sisipkan Header di Paling Atas (Baris 1) jika belum ada
                 if len(all_values) == 0:
                     worksheet.append_row(headers)
                 elif all_values[0][0] != "Timestamp":
                     worksheet.insert_row(headers, index=1)
 
-                # Masukkan Data Vendor Baru
                 row_data = [
                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     nama_vendor,
                     str(tgl_update),
                     nama_pj,
                     kontak_vendor,
-                    f"{score_pct:.1f}%"
+                    f"{score_pct:.1f}%",
+                    status_eval
                 ]
-                
                 for sec in sections:
                     for q in sec['questions']:
                         q_id = q['id']
@@ -341,23 +545,28 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
 
                 worksheet.append_row(row_data)
 
-                # 5. Kirim Berkas & PDF Ringkasan ke Telegram Bot
+                # 2. Update Status Token Menjadi 'Sudah Dipakai' (Hangus)
+                if 'token_row_idx' in st.session_state:
+                    t_sheet = sh.worksheet("Token_Akses")
+                    t_sheet.update_cell(st.session_state['token_row_idx'], 4, "Sudah Dipakai")
+
+                # 3. Kirim Telegram Notifikasi & Dokumen
                 if "telegram" in st.secrets and "bot_token" in st.secrets["telegram"]:
                     bot_token = st.secrets["telegram"]["bot_token"]
                     chat_id = st.secrets["telegram"]["chat_id"]
 
-                    # A. Kirim Pesan Rangkuman CSMS
+                    status_emoji = "✅" if score_pct >= 70.0 else "❌"
                     notif_text = (
                         f"🚨 <b>PENGAJUAN CSMS BARU</b>\n\n"
                         f"🏢 <b>Vendor:</b> {nama_vendor}\n"
                         f"📅 <b>Tgl Pengisian:</b> {tgl_update}\n"
                         f"👤 <b>Penanggung Jawab K3:</b> {nama_pj}\n"
                         f"📞 <b>Kontak:</b> {kontak_vendor}\n"
-                        f"📊 <b>Skor CSMS:</b> <code>{score_pct:.1f}%</code> ({total_ya} dari {total_questions} Ya)"
+                        f"📊 <b>Skor CSMS:</b> <code>{score_pct:.1f}%</code> ({total_ya} dari {q_counter} Ya)\n"
+                        f"📌 <b>Kesimpulan Evaluasi:</b> {status_emoji} <b>{status_eval}</b>"
                     )
                     send_telegram_message(bot_token, chat_id, notif_text)
 
-                    # B. Kirim Berkas Lampiran Vendor
                     for q_id, f_obj in uploaded_files_dict.items():
                         if f_obj is not None:
                             file_b = f_obj.getvalue()
@@ -365,18 +574,22 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                             cap = f"📎 <b>Lampiran [{q_id}]</b> - {nama_vendor}"
                             send_telegram_document(bot_token, chat_id, file_b, dest_fn, cap)
 
-                    # C. Kirim PDF CSMS Ringkasan
                     pdf_cap = f"📄 <b>PDF RINGKASAN CSMS</b> - {nama_vendor}"
                     send_telegram_document(bot_token, chat_id, pdf_bytes, pdf_filename, pdf_cap)
 
-                # 6. Tampilkan Konfirmasi Lengkap di Web
-                st.success(f"✅ Pengajuan CSMS untuk **{nama_vendor}** berhasil tersimpan di Google Sheets & dikirim ke Telegram!")
+                # Reset status login
+                st.session_state['authenticated'] = False
+                st.session_state.pop('active_token', None)
+
+                st.success(f"✅ Pengajuan CSMS untuk **{nama_vendor}** berhasil tersimpan!")
                 st.balloons()
                 
-                col_m1, col_m2 = st.columns(2)
+                col_m1, col_m2, col_m3 = st.columns(3)
                 with col_m1:
                     st.metric(label="Skor Kepatuhan CSMS", value=f"{score_pct:.1f}%")
                 with col_m2:
+                    st.metric(label="Kesimpulan Evaluasi", value=status_eval)
+                with col_m3:
                     st.download_button(
                         label="📄 Unduh Ringkasan PDF CSMS",
                         data=pdf_bytes,
