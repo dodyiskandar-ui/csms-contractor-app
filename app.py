@@ -20,19 +20,21 @@ from reportlab.lib import colors
 # ---------------------------------------------------------
 st.set_page_config(page_title="Prakualifikasi Kontraktor CSMS", layout="wide")
 
-# CSS Kuat untuk Menghapus Teks Default Size Streamlit (200MB per file)
+# CSS Super Presisi untuk Menghapus Teks 200MB per file • PDF
 hide_200mb_css = """
 <style>
-    /* Sembunyikan semua elemen teks instruksi default di dalam Dropzone File Uploader */
-    div[data-testid="stFileUploader"] small,
-    div[data-testid="stFileUploaderDropzoneInstructions"] small,
-    div[data-testid="stFileUploaderDropzoneInstructions"] div:nth-child(2),
-    section[data-testid="stFileUploaderDropzone"] small,
-    [data-testid="stFileUploaderFileData"] {
+    /* Sembunyikan semua teks keterangan ukuran bawaan Streamlit */
+    [data-testid="stFileUploaderDropzoneInstructions"] > div:nth-child(2),
+    [data-testid="stFileUploaderDropzoneInstructions"] small,
+    [data-testid="stFileUploaderDropzone"] small,
+    [data-testid="stFileUploader"] small,
+    div[data-testid="stFileUploaderFileData"] {
         display: none !important;
         visibility: hidden !important;
-        height: 0px !important;
+        opacity: 0 !important;
         font-size: 0px !important;
+        height: 0px !important;
+        width: 0px !important;
     }
 </style>
 """
