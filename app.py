@@ -6,9 +6,6 @@ import requests
 import random
 import string
 import urllib.parse
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -55,57 +52,6 @@ def send_telegram_document(bot_token, chat_id, file_bytes, filename, caption="")
         return None
 
 # ---------------------------------------------------------
-# FUNGSI PENGIRIMAN EMAIL (SILENT MODE - NO ERROR RED POPUP)
-# ---------------------------------------------------------
-def send_token_email(receiver_email, vendor_name, share_url, exp_date):
-    if "email" not in st.secrets:
-        return False
-        
-    try:
-        smtp_server = st.secrets["email"].get("smtp_server", "smtp.gmail.com")
-        smtp_port = int(st.secrets["email"].get("smtp_port", 587))
-        sender_email = st.secrets["email"].get("sender_email", "")
-        sender_password = st.secrets["email"].get("sender_password", "")
-
-        if not sender_email or not sender_password:
-            return False
-
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"🔐 Undangan Pengisian CSMS - {vendor_name}"
-        msg["From"] = f"CSMS System <{sender_email}>"
-        msg["To"] = receiver_email
-
-        html_body = f"""
-        <html>
-          <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-            <div style="max-width: 550px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px; background-color: #ffffff;">
-              <h2 style="color: #1E3A8A; text-align: center; margin-top: 0;">Prakualifikasi CSMS Vendor</h2>
-              <hr style="border: 0; border-top: 1px solid #eeeeee;">
-              <p>Yth. <b>{vendor_name}</b>,</p>
-              <p>Terima kasih telah melakukan registrasi. Berikut adalah Link Unik pengisian Prakualifikasi CSMS perusahaan Anda:</p>
-              <div style="text-align: center; margin: 25px 0;">
-                <a href="{share_url}" style="background-color: #1E3A8A; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">Buka Formulir CSMS Sekarang</a>
-              </div>
-              <p style="font-size: 12px; color: #555;">Atau salin tautan berikut ke browser Anda:<br/><a href="{share_url}" style="color: #1E3A8A;">{share_url}</a></p>
-              <p style="font-size: 12px; color: #d97706; font-weight: bold;">📌 Catatan: Link ini berlaku 7 hari (s.d {exp_date}) dan otomatis hangus setelah 1 kali submit.</p>
-              <hr style="border: 0; border-top: 1px solid #eeeeee;">
-              <p style="font-size: 11px; color: #999; text-align: center;">Pesan otomatis oleh Sistem CSMS. Mohon tidak membalas email ini.</p>
-            </div>
-          </body>
-        </html>
-        """
-        msg.attach(MIMEText(html_body, "html"))
-
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.login(sender_email, sender_password)
-            server.send_message(msg)
-        return True
-    except Exception:
-        # Menelan error email agar tampilan web vendor tetap bersih
-        return False
-
-# ---------------------------------------------------------
 # FUNGSI INTEGRASI GOOGLE SHEETS
 # ---------------------------------------------------------
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -118,7 +64,7 @@ def get_gsheets():
     return gc
 
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS
+# FUNGSI GENERATE PDF CSMS (DILENGKAPI KESIMPULAN & NO RAPI)
 # ---------------------------------------------------------
 def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, summary_list):
     buffer = io.BytesIO()
@@ -276,9 +222,8 @@ if admin_pass == ADMIN_PASSWORD:
     st.sidebar.markdown("---")
     st.sidebar.subheader("➕ Generate Link Undangan Manual")
     input_vname = st.sidebar.text_input("Nama Vendor")
-    input_vemail = st.sidebar.text_input("Email Vendor")
     
-    if st.sidebar.button("Generate & Kirim Link"):
+    if st.sidebar.button("Generate Link"):
         if not input_vname:
             st.sidebar.error("Nama Vendor harus diisi!")
         else:
@@ -300,14 +245,13 @@ if admin_pass == ADMIN_PASSWORD:
                 base_url = "https://csms-contractor-app.streamlit.app"
                 full_share_url = f"{base_url}/?token={new_token}"
                 
-                if input_vemail:
-                    send_token_email(input_vemail, input_vname, full_share_url, exp_date)
                 st.sidebar.code(full_share_url)
+                st.sidebar.success("Link berhasil dibuat! Silakan salin ke vendor.")
             except Exception as e:
                 st.sidebar.error(f"Error: {e}")
 
 # ---------------------------------------------------------
-# SISTEM REGISTRASI MANDIRI VENDOR (SOLUSI 3)
+# SISTEM REGISTRASI MANDIRI VENDOR (NOTIF TELEGRAM KHUSUS)
 # ---------------------------------------------------------
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
@@ -322,11 +266,11 @@ if not st.session_state['authenticated']:
         reg_vendor_name = st.text_input("Nama Perusahaan / Supplier / Vendor (Resmi)")
         reg_vendor_email = st.text_input("Email Resmi Perusahaan / PIC HSE")
         
-        if st.button("🚀 Daftarkan & Dapatkan Link CSMS", type="primary"):
+        if st.button("🚀 Daftarkan & Kirim Undangan", type="primary"):
             if not reg_vendor_name or not reg_vendor_email:
                 st.error("Harap isi Nama Perusahaan dan Email Resmi terlebih dahulu!")
             else:
-                with st.spinner("Memproses registrasi & menerbitkan Token Akses CSMS..."):
+                with st.spinner("Memproses registrasi & mengirimkan Link Unik ke Telegram Admin..."):
                     try:
                         gc = get_gsheets()
                         spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
@@ -347,19 +291,28 @@ if not st.session_state['authenticated']:
                         base_url = "https://csms-contractor-app.streamlit.app"
                         share_url = f"{base_url}/?token={new_token}"
                         
-                        # Kirim Email otomatis (jika disetup)
-                        send_token_email(reg_vendor_email, reg_vendor_name, share_url, exp_date)
-                        
-                        # Notif ke Telegram Admin
+                        # Kirim Notifikasi & Link Unik ke Telegram Admin QHSE
                         if "telegram" in st.secrets and "bot_token" in st.secrets["telegram"]:
                             bot_token = st.secrets["telegram"]["bot_token"]
                             chat_id = st.secrets["telegram"]["chat_id"]
-                            notif = f"🔔 <b>REGISTRASI MANDIRI VENDOR CSMS</b>\n\n🏢 <b>Vendor:</b> {reg_vendor_name}\n📧 <b>Email:</b> {reg_vendor_email}\n🔑 <b>Token:</b> <code>{new_token}</code>\n📅 <b>Expired:</b> {exp_date}"
-                            send_telegram_message(bot_token, chat_id, notif)
+                            
+                            notif_admin = (
+                                f"🔔 <b>REGISTRASI MANDIRI VENDOR CSMS</b>\n\n"
+                                f"🏢 <b>Vendor:</b> {reg_vendor_name}\n"
+                                f"📧 <b>Email Vendor:</b> {reg_vendor_email}\n"
+                                f"🔑 <b>Token Akses:</b> <code>{new_token}</code>\n"
+                                f"📅 <b>Kadaluarsa:</b> {exp_date}\n\n"
+                                f"📋 <b>Pesan Siap Kirim Ke Email/WA Vendor:</b>\n"
+                                f"<code>Yth. {reg_vendor_name},\n\n"
+                                f"Berikut adalah Link Pengisian Prakualifikasi CSMS Perusahaan Anda:\n"
+                                f"{share_url}\n\n"
+                                f"📌 Catatan: Link berlaku 7 hari (s.d {exp_date}) dan otomatis hangus setelah 1x submit.</code>"
+                            )
+                            send_telegram_message(bot_token, chat_id, notif_admin)
                             
                         st.success("✅ Registrasi Berhasil!")
                         st.markdown(f"**Link Pengisian CSMS Anda:**\n[{share_url}]({share_url})")
-                        st.info("📌 Silakan klik link di atas untuk langsung mengisikan Formulir CSMS perusahaan Anda.")
+                        st.info("📌 Silakan klik link di atas atau tunggu konfirmasi/email resmi dari Tim HSE kami yang berisi link pengisian ini.")
                     except Exception as e:
                         st.error(f"Gagal melakukan registrasi: {e}")
 
@@ -549,7 +502,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                     t_sheet = sh.worksheet("Token_Akses")
                     t_sheet.update_cell(st.session_state['token_row_idx'], 4, "Sudah Dipakai")
 
-                # 3. Kirim Telegram Notifikasi & Dokumen
+                # 3. Kirim Telegram Notifikasi Hasil Submit CSMS & PDF
                 if "telegram" in st.secrets and "bot_token" in st.secrets["telegram"]:
                     bot_token = st.secrets["telegram"]["bot_token"]
                     chat_id = st.secrets["telegram"]["chat_id"]
