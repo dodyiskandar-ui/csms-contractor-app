@@ -125,7 +125,7 @@ def verify_token_credentials(input_token):
         return False, f"Gagal memverifikasi token: {e}", None, None
 
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS (HEADER STRUKTUR TERBARU)
+# FUNGSI GENERATE PDF CSMS
 # ---------------------------------------------------------
 def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, total_poin, max_poin, summary_list):
     buffer = io.BytesIO()
@@ -152,7 +152,6 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
         Spacer(1, 6)
     ]
     
-    # Header Sesuai Gambar yang Diminta User
     info_data = [
         [Paragraph("Nama Perusahaan Supplier / Vendor :", bold_body), Paragraph(f"{nama_vendor}", normal_body),
          Paragraph("Tanggal Pengisian :", bold_body), Paragraph(f"{tgl_update}", normal_body)],
@@ -206,7 +205,7 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     return pdf_bytes
 
 # ---------------------------------------------------------
-# MASTER DATA SOAL CSMS (REVISI 2 SEESUAI REVISI TERBARU)
+# MASTER DATA SOAL CSMS (REVISI 2)
 # ---------------------------------------------------------
 sections = [
     {
@@ -331,6 +330,11 @@ sections = [
         ]
     }
 ]
+
+# DETEKSI PADA RUNTIME TOTAL ITEM SOAL DAN LAMPIRAN PDF (DINAMIS & PASTI PRESISI)
+TOTAL_SOAL_YA = sum(len(sec['questions']) for sec in sections) # 37
+TOTAL_LAMPIRAN_FILE = sum(sum(1 for q in sec['questions'] if q.get('has_file')) for sec in sections) # 14
+MAX_TOTAL_POIN = TOTAL_SOAL_YA + TOTAL_LAMPIRAN_FILE # 51 Poin
 
 # ---------------------------------------------------------
 # DETEKSI URL OTOMATIS APLIKASI
@@ -507,7 +511,7 @@ for section in sections:
     st.markdown("---")
 
 # ---------------------------------------------------------
-# PROSES SUBMIT CSMS & PERHITUNGAN SKOR BESERTA DOKUMEN PDF
+# PROSES SUBMIT CSMS & PENILAIAN DENGAN PEMBATAS 100%
 # ---------------------------------------------------------
 if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     if not nama_vendor:
@@ -517,14 +521,18 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     else:
         with st.spinner("Menyimpan data CSMS & Mengubah Status Token menjadi Hangus..."):
             try:
-                # HITUNG POIN DINAMIS BERDASARKAN TOTAL SOAL + LAMPIRAN:
-                # Total Pertanyaan (37) + Total Lampiran PDF (14) = 51 Poin Maksimal
+                # HITUNG POIN RESMI CSMS:
+                # Ya = 1 Poin (37 Soal)
+                # Lampiran PDF = 1 Poin (14 Kolom Lampiran)
+                # Max Poin = 51
                 total_ya = sum(1 for v in responses.values() if v == "Ya")
                 total_files_uploaded = sum(1 for q_id, f_obj in uploaded_files_dict.items() if f_obj is not None)
                 
                 total_poin = total_ya + total_files_uploaded
-                max_poin = 51
-                score_pct = (total_poin / max_poin) * 100.0
+                
+                # Menjamin Skor Maksimal Tepat 100.0%
+                raw_score = (total_poin / MAX_TOTAL_POIN) * 100.0
+                score_pct = min(raw_score, 100.0)
 
                 if score_pct >= 70.0:
                     status_eval = "Dapat diterima (Lulus CSMS)"
@@ -546,7 +554,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                         num_idx += 1
 
                 clean_vendor_name = "".join(c for c in nama_vendor if c.isalnum() or c in (' ', '_', '-')).rstrip()
-                pdf_bytes = generate_csms_pdf(nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, total_poin, max_poin, summary_list)
+                pdf_bytes = generate_csms_pdf(nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, total_poin, MAX_TOTAL_POIN, summary_list)
                 pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
 
                 # 1. Simpan Rekapitulasi ke Google Sheets
@@ -574,7 +582,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                     str(tgl_update),
                     nama_pj,
                     kontak_vendor,
-                    f"{total_poin}/{max_poin}",
+                    f"{total_poin}/{MAX_TOTAL_POIN}",
                     f"{score_pct:.1f}%",
                     status_eval
                 ]
@@ -592,7 +600,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                     t_sheet = sh.worksheet("Token_Akses")
                     t_sheet.update_cell(st.session_state['token_row_idx'], 4, "Sudah Dipakai")
 
-                # 3. Kirim Telegram Notifikasi Rapi Hasil CSMS ke Admin
+                # 3. Kirim Telegram Notifikasi Hasil Submit CSMS ke Admin
                 if "telegram" in st.secrets and "bot_token" in st.secrets["telegram"]:
                     bot_token = st.secrets["telegram"]["bot_token"]
                     chat_id = st.secrets["telegram"]["chat_id"]
@@ -604,9 +612,9 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                         f"📅 <b>Tgl Pengisian:</b> {tgl_update}\n"
                         f"👤 <b>Penanggung Jawab K3:</b> {nama_pj}\n"
                         f"📞 <b>Kontak:</b> {kontak_vendor}\n\n"
-                        f"📊 <b>Skor CSMS:</b> <code>{score_pct:.1f}%</code> ({total_poin} dari {max_poin} Poin)\n"
-                        f"├ 📝 <b>Jawaban 'Ya':</b> {total_ya} dari 37 Soal\n"
-                        f"└ 📎 <b>Lampiran PDF:</b> {total_files_uploaded} dari 14 Dokumen\n\n"
+                        f"📊 <b>Skor CSMS:</b> <code>{score_pct:.1f}%</code> ({total_poin} dari {MAX_TOTAL_POIN} Poin)\n"
+                        f"├ 📝 <b>Jawaban 'Ya':</b> {total_ya} dari {TOTAL_SOAL_YA} Soal\n"
+                        f"└ 📎 <b>Lampiran PDF:</b> {total_files_uploaded} dari {TOTAL_LAMPIRAN_FILE} Dokumen\n\n"
                         f"📌 <b>Hasil Evaluasi:</b> {status_emoji} <b>{status_eval}</b>"
                     )
                     send_telegram_message(bot_token, chat_id, notif_text)
@@ -627,11 +635,11 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 st.success(f"✅ Pengajuan CSMS untuk **{nama_vendor}** berhasil tersimpan!")
                 st.balloons()
                 
-                # TAMPILAN DETIL METRIK SKOR UNTUK VENDOR
+                # METRIK HASIL EVALUASI CSMS BAGI VENDOR
                 st.markdown("### 📊 Hasil Evaluasi Prakualifikasi CSMS")
                 col_m1, col_m2, col_m3 = st.columns(3)
                 with col_m1:
-                    st.metric(label="Skor Kepatuhan CSMS", value=f"{score_pct:.1f}%", delta=f"{total_poin}/{max_poin} Poin Terkumpul")
+                    st.metric(label="Skor Kepatuhan CSMS", value=f"{score_pct:.1f}%", delta=f"{total_poin}/{MAX_TOTAL_POIN} Poin Terkumpul")
                 with col_m2:
                     st.metric(label="Status Hasil Evaluasi", value=status_eval)
                 with col_m3:
