@@ -125,14 +125,15 @@ def verify_token_credentials(input_token):
         return False, f"Gagal memverifikasi token: {e}", None, None
 
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS
+# FUNGSI GENERATE PDF CSMS (HEADER STRUKTUR TERBARU)
 # ---------------------------------------------------------
-def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, total_poin, summary_list):
+def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, total_poin, max_poin, summary_list):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=14, leading=18, alignment=1, textColor=colors.HexColor('#1E3A8A'))
     subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontSize=9, leading=11, alignment=1, textColor=colors.gray)
+    section_title = ParagraphStyle('SecTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, leading=12, textColor=colors.black)
     bold_body = ParagraphStyle('BoldBody', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
     normal_body = ParagraphStyle('NormalBody', parent=styles['Normal'], fontSize=8, leading=10)
     center_body = ParagraphStyle('CenterBody', parent=styles['Normal'], fontSize=8, leading=10, alignment=1)
@@ -146,23 +147,24 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
         Paragraph("HASIL EVALUASI PRAKUALIFIKASI KONTRAKTOR (CSMS)", title_style),
         Paragraph("Contractor Safety Management System - Form Ref: FM/QHE/0127 rev. 2", subtitle_style),
         Spacer(1, 10),
-        HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=12)
+        HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=10),
+        Paragraph("<b>1. IDENTITAS PERUSAHAAN</b>", section_title),
+        Spacer(1, 6)
     ]
     
+    # Header Sesuai Gambar yang Diminta User
     info_data = [
-        [Paragraph("<b>Nama Vendor/Supplier</b>", normal_body), Paragraph(f": {nama_vendor}", normal_body),
-         Paragraph("<b>Tanggal Pengisian</b>", normal_body), Paragraph(f": {tgl_update}", normal_body)],
-        [Paragraph("<b>Penanggung Jawab K3</b>", normal_body), Paragraph(f": {nama_pj}", normal_body),
-         Paragraph("<b>Kontak/Email</b>", normal_body), Paragraph(f": {kontak_vendor}", normal_body)],
-        [Paragraph("<b>Total Poin Evaluasi</b>", normal_body), Paragraph(f": <b>{total_poin} / 50 Poin</b>", normal_body),
-         Paragraph("<b>Skor Kepatuhan CSMS</b>", normal_body), Paragraph(f": <b>{score_pct:.1f}%</b>", normal_body)],
-        [Paragraph("<b>Kesimpulan Hasil Evaluasi</b>", normal_body), Paragraph(f": {kesimpulan_text}", normal_body),
-         Paragraph("", normal_body), Paragraph("", normal_body)]
+        [Paragraph("Nama Perusahaan Supplier / Vendor :", bold_body), Paragraph(f"{nama_vendor}", normal_body),
+         Paragraph("Tanggal Pengisian :", bold_body), Paragraph(f"{tgl_update}", normal_body)],
+        [Paragraph("Penanggung Jawab HSE atau Petugas K3L :", bold_body), Paragraph(f"{nama_pj}", normal_body),
+         Paragraph("Skor Kepatuhan CSMS :", bold_body), Paragraph(f"<b>{score_pct:.1f}%</b> ({total_poin}/{max_poin} Poin)", normal_body)],
+        [Paragraph("Nomor Telepon / Email Kontak :", bold_body), Paragraph(f"{kontak_vendor}", normal_body),
+         Paragraph("Kesimpulan Hasil Evaluasi :", bold_body), Paragraph(f"{kesimpulan_text}", normal_body)]
     ]
     
-    t_info = Table(info_data, colWidths=[120, 150, 110, 140])
+    t_info = Table(info_data, colWidths=[165, 125, 125, 105])
     t_info.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F3F4F6')),
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F9FAFB')),
         ('PADDING', (0,0), (-1,-1), 5),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
@@ -170,6 +172,8 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     ]))
     elements.append(t_info)
     elements.append(Spacer(1, 12))
+    elements.append(Paragraph("<b>2. PERTANYAAN EVALUASI CSMS</b>", section_title))
+    elements.append(Spacer(1, 6))
     
     table_data = [[
         Paragraph("<b>No</b>", ParagraphStyle('HCenter', parent=bold_body, alignment=1)),
@@ -451,7 +455,7 @@ with col1:
     nama_vendor = st.text_input("Nama Perusahaan / Supplier / Vendor", value=st.session_state.get('assigned_vendor', ''))
     tgl_update = st.date_input("Tanggal Pengisian", datetime.date.today())
 with col2:
-    nama_pj = st.text_input("Penanggung Jawab K3 / HSE Leader")
+    nama_pj = st.text_input("Penanggung Jawab HSE atau Petugas K3L")
     kontak_vendor = st.text_input("Nomor Telepon / Email Kontak")
 
 st.divider()
@@ -513,17 +517,14 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     else:
         with st.spinner("Menyimpan data CSMS & Mengubah Status Token menjadi Hangus..."):
             try:
-                # HITUNG POIN RESMI BERDASARKAN FM/QHE/0127 REV. 2:
-                # - Jawaban Ya = 1 Poin (Total 37 Soal)
-                # - Lampiran PDF Ada = 1 Poin (Total 13 Lampiran)
-                # - Total Poin Maksimal = 50 Poin
-                # - Nilai CSMS (%) = Total Poin x 2
-                
+                # HITUNG POIN DINAMIS BERDASARKAN TOTAL SOAL + LAMPIRAN:
+                # Total Pertanyaan (37) + Total Lampiran PDF (14) = 51 Poin Maksimal
                 total_ya = sum(1 for v in responses.values() if v == "Ya")
                 total_files_uploaded = sum(1 for q_id, f_obj in uploaded_files_dict.items() if f_obj is not None)
                 
                 total_poin = total_ya + total_files_uploaded
-                score_pct = total_poin * 2.0  # (total_poin / 50) * 100%
+                max_poin = 51
+                score_pct = (total_poin / max_poin) * 100.0
 
                 if score_pct >= 70.0:
                     status_eval = "Dapat diterima (Lulus CSMS)"
@@ -545,7 +546,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                         num_idx += 1
 
                 clean_vendor_name = "".join(c for c in nama_vendor if c.isalnum() or c in (' ', '_', '-')).rstrip()
-                pdf_bytes = generate_csms_pdf(nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, total_poin, summary_list)
+                pdf_bytes = generate_csms_pdf(nama_vendor, str(tgl_update), nama_pj, kontak_vendor, score_pct, total_poin, max_poin, summary_list)
                 pdf_filename = f"CSMS_Summary_{clean_vendor_name}.pdf"
 
                 # 1. Simpan Rekapitulasi ke Google Sheets
@@ -573,7 +574,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                     str(tgl_update),
                     nama_pj,
                     kontak_vendor,
-                    f"{total_poin}/50",
+                    f"{total_poin}/{max_poin}",
                     f"{score_pct:.1f}%",
                     status_eval
                 ]
@@ -603,9 +604,9 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                         f"📅 <b>Tgl Pengisian:</b> {tgl_update}\n"
                         f"👤 <b>Penanggung Jawab K3:</b> {nama_pj}\n"
                         f"📞 <b>Kontak:</b> {kontak_vendor}\n\n"
-                        f"📊 <b>Skor CSMS:</b> <code>{score_pct:.1f}%</code> ({total_poin} dari 50 Poin)\n"
+                        f"📊 <b>Skor CSMS:</b> <code>{score_pct:.1f}%</code> ({total_poin} dari {max_poin} Poin)\n"
                         f"├ 📝 <b>Jawaban 'Ya':</b> {total_ya} dari 37 Soal\n"
-                        f"└ 📎 <b>Lampiran PDF:</b> {total_files_uploaded} dari 13 Dokumen\n\n"
+                        f"└ 📎 <b>Lampiran PDF:</b> {total_files_uploaded} dari 14 Dokumen\n\n"
                         f"📌 <b>Hasil Evaluasi:</b> {status_emoji} <b>{status_eval}</b>"
                     )
                     send_telegram_message(bot_token, chat_id, notif_text)
@@ -630,7 +631,7 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
                 st.markdown("### 📊 Hasil Evaluasi Prakualifikasi CSMS")
                 col_m1, col_m2, col_m3 = st.columns(3)
                 with col_m1:
-                    st.metric(label="Skor Kepatuhan CSMS", value=f"{score_pct:.1f}%", delta=f"{total_poin}/50 Poin Terkumpul")
+                    st.metric(label="Skor Kepatuhan CSMS", value=f"{score_pct:.1f}%", delta=f"{total_poin}/{max_poin} Poin Terkumpul")
                 with col_m2:
                     st.metric(label="Status Hasil Evaluasi", value=status_eval)
                 with col_m3:
