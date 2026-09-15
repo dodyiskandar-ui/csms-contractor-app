@@ -16,19 +16,25 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ---------------------------------------------------------
-# KONFIGURASI HALAMAN & INJEKSI CSS (HILANGKAN SIDEBAR & 200MB)
+# KONFIGURASI HALAMAN & PROFESSIONAL CSS INJECTION
 # ---------------------------------------------------------
-st.set_page_config(page_title="Prakualifikasi Kontraktor CSMS", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="Prakualifikasi Kontraktor CSMS", 
+    page_icon="🛡️", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
+# Professional Corporate UI Styling
 custom_css = """
 <style>
-    /* 1. Sembunyikan Sidebar Panel Admin secara Total */
+    /* 1. Sembunyikan Sidebar Panel Admin */
     [data-testid="stSidebar"], section[data-testid="stSidebar"] {
         display: none !important;
         width: 0px !important;
     }
     
-    /* 2. Sembunyikan Teks Keterangan Size Default Streamlit (200MB per file) */
+    /* 2. Sembunyikan Teks Default Size Streamlit (200MB per file) */
     [data-testid="stFileUploaderDropzoneInstructions"] > div:nth-child(2),
     [data-testid="stFileUploaderDropzoneInstructions"] small,
     [data-testid="stFileUploaderDropzone"] small,
@@ -40,6 +46,58 @@ custom_css = """
         font-size: 0px !important;
         height: 0px !important;
     }
+
+    /* 3. Style Header Banner Corporate */
+    .header-box {
+        background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+        border-left: 6px solid #2563EB;
+        padding: 24px 28px;
+        border-radius: 12px;
+        margin-bottom: 24px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+    }
+    .header-title {
+        color: #F8FAFC;
+        font-size: 26px;
+        font-weight: 700;
+        margin: 0;
+        letter-spacing: -0.5px;
+    }
+    .header-subtitle {
+        color: #94A3B8;
+        font-size: 13px;
+        margin-top: 6px;
+        font-weight: 400;
+    }
+
+    /* 4. Tab Modern Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 12px;
+        background-color: transparent;
+        border-bottom: 1px solid #334155;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 48px;
+        border-radius: 8px 8px 0px 0px;
+        padding: 0px 20px;
+        color: #94A3B8;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #38BDF8 !important;
+        border-bottom-color: #38BDF8 !important;
+    }
+
+    /* 5. Modern Button & Input Fixes */
+    .stButton > button {
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
@@ -47,9 +105,13 @@ st.markdown(custom_css, unsafe_allow_html=True)
 query_params = st.query_params
 url_token = query_params.get("token", "").strip().upper()
 
-st.title("📋 Form Prakualifikasi Kontraktor (CSMS)")
-st.caption("Contractor Safety Management System - FM/QHE/0127 rev. 2")
-st.divider()
+# Banner Header Utama
+st.markdown("""
+<div class="header-box">
+    <div class="header-title">🛡️ Form Prakualifikasi Kontraktor (CSMS)</div>
+    <div class="header-subtitle">Contractor Safety Management System — Form Ref: FM/QHE/0127 rev. 2</div>
+</div>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # FUNGSI INTEGRASI TELEGRAM BOT API
@@ -331,9 +393,8 @@ sections = [
     }
 ]
 
-# DETEKSI PADA RUNTIME TOTAL ITEM SOAL DAN LAMPIRAN PDF (DINAMIS & PASTI PRESISI)
-TOTAL_SOAL_YA = sum(len(sec['questions']) for sec in sections) # 37
-TOTAL_LAMPIRAN_FILE = sum(sum(1 for q in sec['questions'] if q.get('has_file')) for sec in sections) # 14
+TOTAL_SOAL_YA = sum(len(sec['questions']) for sec in sections) 
+TOTAL_LAMPIRAN_FILE = sum(sum(1 for q in sec['questions'] if q.get('has_file')) for sec in sections) 
 MAX_TOTAL_POIN = TOTAL_SOAL_YA + TOTAL_LAMPIRAN_FILE # 51 Poin
 
 # ---------------------------------------------------------
@@ -365,106 +426,119 @@ if not st.session_state['authenticated'] and url_token:
         st.error(msg)
 
 # ---------------------------------------------------------
-# TAB REGISTRASI & VERIFIKASI MANUAL (JIKA TANPA TOKEN)
+# TAB REGISTRASI & VERIFIKASI AKSES VENDOR (LAYOUT PROFESSIONAL CARD)
 # ---------------------------------------------------------
 if not st.session_state['authenticated']:
-    st.subheader("🔑 Pendaftaran & Verifikasi Akses Vendor (CSMS)")
     
-    tab_reg, tab_token = st.tabs(["📝 Registrasi Mandiri Vendor Baru", "🔑 Punya Kode Token / Link Unik"])
+    col_centered = st.columns([1, 8, 1])[1]
     
-    with tab_reg:
-        st.info("Bagi Vendor/Kontraktor baru, silakan daftarkan perusahaan Anda untuk mendapatkan Link Pengisian CSMS berdurasi 7 hari.")
-        reg_vendor_name = st.text_input("Nama Perusahaan / Supplier / Vendor (Resmi)")
-        reg_vendor_email = st.text_input("Email Resmi Perusahaan / PIC HSE")
+    with col_centered:
+        st.markdown("### 🔑 Akses Portal CSMS Vendor")
+        st.caption("Pilih opsi di bawah untuk memulai prakualifikasi CSMS perusahaan Anda.")
         
-        if st.button("🚀 Daftarkan & Dapatkan Link CSMS", type="primary"):
-            if not reg_vendor_name or not reg_vendor_email:
-                st.error("Harap isi Nama Perusahaan dan Email Resmi terlebih dahulu!")
-            else:
-                with st.spinner("Memproses registrasi & menerbitkan Token Akses CSMS..."):
-                    try:
-                        gc = get_gsheets()
-                        spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
-                        sh = gc.open_by_key(spreadsheet_id)
-                        
-                        try:
-                            t_sheet = sh.worksheet("Token_Akses")
-                        except Exception:
-                            t_sheet = sh.add_worksheet(title="Token_Akses", rows="100", cols="4")
-                            t_sheet.append_row(["Token", "Nama Vendor", "Expired Date", "Status"])
-                        
-                        rand_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-                        new_token = f"K3-{rand_str}"
-                        exp_date = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
-                        
-                        t_sheet.append_row([new_token, reg_vendor_name, exp_date, "Aktif"])
-                        
-                        base_url = get_current_app_url()
-                        share_url = f"{base_url}/?token={new_token}"
-                        
-                        # Kirim Notifikasi & Link Unik ke Telegram Admin QHSE
-                        if "telegram" in st.secrets and "bot_token" in st.secrets["telegram"]:
-                            bot_token = st.secrets["telegram"]["bot_token"]
-                            chat_id = st.secrets["telegram"]["chat_id"]
-                            
-                            notif_admin = (
-                                f"🔔 <b>REGISTRASI MANDIRI VENDOR CSMS</b>\n\n"
-                                f"🏢 <b>Vendor:</b> {reg_vendor_name}\n"
-                                f"📧 <b>Email Vendor:</b> {reg_vendor_email}\n"
-                                f"🔑 <b>Token Akses:</b> <code>{new_token}</code>\n"
-                                f"📅 <b>Kadaluarsa:</b> {exp_date}\n\n"
-                                f"📋 <b>Pesan Siap Kirim Ke Email/WA Vendor:</b>\n"
-                                f"<code>Yth. {reg_vendor_name},\n\n"
-                                f"Berikut adalah Link Pengisian Prakualifikasi CSMS Perusahaan Anda:\n"
-                                f"{share_url}\n\n"
-                                f"📌 Catatan: Link berlaku 7 hari (s.d {exp_date}) dan otomatis hangus setelah 1x submit.</code>"
-                            )
-                            send_telegram_message(bot_token, chat_id, notif_admin)
-                            
-                        st.success("✅ Registrasi Berhasil!")
-                        st.markdown(f"**Link Pengisian CSMS Anda:**\n[{share_url}]({share_url})")
-                        st.info("📌 Silakan klik link di atas untuk langsung mengisikan Formulir CSMS perusahaan Anda.")
-                    except Exception as e:
-                        st.error(f"Gagal melakukan registrasi: {e}")
+        tab_reg, tab_token = st.tabs(["📝 Registrasi Mandiri Vendor Baru", "🔑 Masukkan Kode Token / Link Unik"])
+        
+        with tab_reg:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.info("💡 **Petunjuk Vendor Baru:** Setelah mendaftar, Anda akan menerima **Link Unik CSMS** yang berlaku selama 7 hari.")
+            
+            with st.container():
+                reg_vendor_name = st.text_input("🏢 Nama Perusahaan / Supplier / Vendor (Resmi)", placeholder="Contoh: PT. Aneka Jaya Teknik")
+                reg_vendor_email = st.text_input("📧 Email Resmi Perusahaan / PIC HSE", placeholder="Contoh: hse@anekajaya.co.id")
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🚀 Daftarkan Perusahaan & Dapatkan Link CSMS", type="primary", use_container_width=True):
+                    if not reg_vendor_name or not reg_vendor_email:
+                        st.error("⚠️ Harap isi Nama Perusahaan dan Email Resmi terlebih dahulu!")
+                    else:
+                        with st.spinner("Memproses registrasi & menerbitkan Token Akses CSMS..."):
+                            try:
+                                gc = get_gsheets()
+                                spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
+                                sh = gc.open_by_key(spreadsheet_id)
+                                
+                                try:
+                                    t_sheet = sh.worksheet("Token_Akses")
+                                except Exception:
+                                    t_sheet = sh.add_worksheet(title="Token_Akses", rows="100", cols="4")
+                                    t_sheet.append_row(["Token", "Nama Vendor", "Expired Date", "Status"])
+                                
+                                rand_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+                                new_token = f"K3-{rand_str}"
+                                exp_date = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+                                
+                                t_sheet.append_row([new_token, reg_vendor_name, exp_date, "Aktif"])
+                                
+                                base_url = get_current_app_url()
+                                share_url = f"{base_url}/?token={new_token}"
+                                
+                                # Kirim Notifikasi & Link Unik ke Telegram Admin QHSE
+                                if "telegram" in st.secrets and "bot_token" in st.secrets["telegram"]:
+                                    bot_token = st.secrets["telegram"]["bot_token"]
+                                    chat_id = st.secrets["telegram"]["chat_id"]
+                                    
+                                    notif_admin = (
+                                        f"🔔 <b>REGISTRASI MANDIRI VENDOR CSMS</b>\n\n"
+                                        f"🏢 <b>Vendor:</b> {reg_vendor_name}\n"
+                                        f"📧 <b>Email Vendor:</b> {reg_vendor_email}\n"
+                                        f"🔑 <b>Token Akses:</b> <code>{new_token}</code>\n"
+                                        f"📅 <b>Kadaluarsa:</b> {exp_date}\n\n"
+                                        f"📋 <b>Pesan Siap Kirim Ke Email/WA Vendor:</b>\n"
+                                        f"<code>Yth. {reg_vendor_name},\n\n"
+                                        f"Berikut adalah Link Pengisian Prakualifikasi CSMS Perusahaan Anda:\n"
+                                        f"{share_url}\n\n"
+                                        f"📌 Catatan: Link berlaku 7 hari (s.d {exp_date}) dan otomatis hangus setelah 1x submit.</code>"
+                                    )
+                                    send_telegram_message(bot_token, chat_id, notif_admin)
+                                    
+                                st.success("✅ Registrasi Berhasil!")
+                                st.markdown(f"**Link Pengisian CSMS Anda:**\n[{share_url}]({share_url})")
+                                st.info("📌 Silakan klik link di atas untuk langsung mengisikan Formulir CSMS perusahaan Anda.")
+                            except Exception as e:
+                                st.error(f"Gagal melakukan registrasi: {e}")
 
-    with tab_token:
-        st.info("Jika Anda sudah menerima Kode Token atau mengeklik Link Unik dari Email, verifikasi di sini.")
-        input_token = st.text_input("Masukkan Kode Token CSMS (Contoh: K3-X89A2)", value=url_token).strip().upper()
-        
-        if st.button("🔑 Buka Formulir CSMS"):
-            if not input_token:
-                st.error("Silakan masukkan Kode Token terlebih dahulu!")
-            else:
-                is_valid, msg, row_idx, v_name = verify_token_credentials(input_token)
-                if is_valid:
-                    st.session_state['authenticated'] = True
-                    st.session_state['active_token'] = input_token
-                    st.session_state['token_row_idx'] = row_idx
-                    st.session_state['assigned_vendor'] = v_name
-                    st.success("✅ Token Valid! Membuka Formulir CSMS...")
-                    st.rerun()
-                else:
-                    st.error(msg)
+        with tab_token:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.info("💡 Masukkan Kode Token unik yang telah dikirimkan ke email atau WhatsApp perusahaan Anda.")
+            
+            with st.container():
+                input_token = st.text_input("🔑 Kode Token Akses CSMS", value=url_token, placeholder="Contoh: K3-X89A2").strip().upper()
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🔓 Verifikasi Token & Buka Formulir CSMS", type="primary", use_container_width=True):
+                    if not input_token:
+                        st.error("⚠️ Silakan masukkan Kode Token terlebih dahulu!")
+                    else:
+                        is_valid, msg, row_idx, v_name = verify_token_credentials(input_token)
+                        if is_valid:
+                            st.session_state['authenticated'] = True
+                            st.session_state['active_token'] = input_token
+                            st.session_state['token_row_idx'] = row_idx
+                            st.session_state['assigned_vendor'] = v_name
+                            st.success("✅ Token Valid! Membuka Formulir CSMS...")
+                            st.rerun()
+                        else:
+                            st.error(msg)
     
     st.stop()
 
 # ---------------------------------------------------------
-# FORM CSMS (LAYAR VENDOR)
+# FORM CSMS (LAYAR VENDOR - PROFESSIONAL LAYOUT)
 # ---------------------------------------------------------
-st.info(f"🔑 **Token Akses Aktif:** `{st.session_state.get('active_token')}` — Perusahaan: **{st.session_state.get('assigned_vendor')}**")
+st.success(f"🔑 **Akses Terverifikasi:** `{st.session_state.get('active_token')}` — Perusahaan: **{st.session_state.get('assigned_vendor')}**")
 
-st.subheader("1. Identitas Perusahaan")
+st.markdown("### 1. Identitas Perusahaan")
 col1, col2 = st.columns(2)
 with col1:
-    nama_vendor = st.text_input("Nama Perusahaan / Supplier / Vendor", value=st.session_state.get('assigned_vendor', ''))
-    tgl_update = st.date_input("Tanggal Pengisian", datetime.date.today())
+    nama_vendor = st.text_input("🏢 Nama Perusahaan / Supplier / Vendor", value=st.session_state.get('assigned_vendor', ''))
+    tgl_update = st.date_input("📅 Tanggal Pengisian", datetime.date.today())
 with col2:
-    nama_pj = st.text_input("Penanggung Jawab HSE atau Petugas K3L")
-    kontak_vendor = st.text_input("Nomor Telepon / Email Kontak")
+    nama_pj = st.text_input("👤 Penanggung Jawab HSE atau Petugas K3L")
+    kontak_vendor = st.text_input("📞 Nomor Telepon / Email Kontak")
 
 st.divider()
 
-st.subheader("2. Pertanyaan Evaluasi CSMS")
+st.markdown("### 2. Pertanyaan Evaluasi CSMS")
 
 responses = {}
 uploaded_files_dict = {}
@@ -473,7 +547,7 @@ q_counter = 0
 file_error_flag = False
 
 for section in sections:
-    st.markdown(f"### {section['kategori']}")
+    st.markdown(f"#### 📁 {section['kategori']}")
     
     for q in section['questions']:
         q_counter += 1
@@ -521,16 +595,11 @@ if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
     else:
         with st.spinner("Menyimpan data CSMS & Mengubah Status Token menjadi Hangus..."):
             try:
-                # HITUNG POIN RESMI CSMS:
-                # Ya = 1 Poin (37 Soal)
-                # Lampiran PDF = 1 Poin (14 Kolom Lampiran)
-                # Max Poin = 51
+                # HITUNG POIN RESMI CSMS (MAX 51 POIN = 100.0%)
                 total_ya = sum(1 for v in responses.values() if v == "Ya")
                 total_files_uploaded = sum(1 for q_id, f_obj in uploaded_files_dict.items() if f_obj is not None)
                 
                 total_poin = total_ya + total_files_uploaded
-                
-                # Menjamin Skor Maksimal Tepat 100.0%
                 raw_score = (total_poin / MAX_TOTAL_POIN) * 100.0
                 score_pct = min(raw_score, 100.0)
 
