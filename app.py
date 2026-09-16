@@ -5,6 +5,8 @@ import io
 import requests
 import random
 import string
+import html
+import time
 import urllib.parse
 import gspread
 from google.oauth2.service_account import Credentials
@@ -25,7 +27,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Professional Corporate UI Styling
+# Professional Corporate UI Styling & Security CSS
 custom_css = """
 <style>
     /* 1. Sembunyikan Sidebar Panel Admin secara Total */
@@ -88,7 +90,7 @@ custom_css = """
         border-bottom-color: #38BDF8 !important;
     }
 
-    /* 5. Modern Button & Input Fixes */
+    /* 5. Modern Button Styling */
     .stButton > button {
         border-radius: 8px !important;
         font-weight: 600 !important;
@@ -112,6 +114,21 @@ st.markdown("""
     <div class="header-subtitle">Contractor Safety Management System — Form Ref: FM/QHE/0127 rev. 2</div>
 </div>
 """, unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# UTILITAS KEAMANAN (VALIDASI MAGIC BYTES & SANITASI INPUT)
+# ---------------------------------------------------------
+def sanitize_input(text):
+    """Mencegah serangan XSS dan HTML Injection."""
+    if not text:
+        return ""
+    return html.escape(str(text).strip())
+
+def is_valid_pdf_content(file_bytes):
+    """Memeriksa Magic Bytes header file untuk memastikan file PDF asli."""
+    if not file_bytes or len(file_bytes) < 4:
+        return False
+    return file_bytes.startswith(b'%PDF')
 
 # ---------------------------------------------------------
 # FUNGSI INTEGRASI TELEGRAM BOT API
@@ -148,6 +165,7 @@ def get_gsheets():
     return gc
 
 def verify_token_credentials(input_token):
+    input_token = sanitize_input(input_token).upper()
     try:
         gc = get_gsheets()
         spreadsheet_id = st.secrets["google_drive"]["spreadsheet_id"]
@@ -168,6 +186,7 @@ def verify_token_credentials(input_token):
                 break
         
         if not matched:
+            time.sleep(1) # Delay anti brute-force
             return False, "⛔ Kode Token tidak terdaftar atau Salah!", None, None
         
         status = matched.get("Status")
@@ -187,7 +206,7 @@ def verify_token_credentials(input_token):
         return False, f"Gagal memverifikasi token: {e}", None, None
 
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS (FORMAT HEADER TERKONTROL & SINGLE KATEGORI)
+# FUNGSI GENERATE PDF CSMS
 # ---------------------------------------------------------
 def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, total_poin, max_poin, summary_list):
     buffer = io.BytesIO()
@@ -198,7 +217,6 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontSize=8.5, leading=11, alignment=1, textColor=colors.HexColor('#4B5563'))
     section_title = ParagraphStyle('SecTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=12, textColor=colors.HexColor('#1E1B4B'))
     
-    # Text styles khusus tabel dengan kontras jelas
     th_style = ParagraphStyle('THStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=1, textColor=colors.white)
     bold_body = ParagraphStyle('BoldBody', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
     normal_body = ParagraphStyle('NormalBody', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
@@ -218,7 +236,6 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
         Spacer(1, 5)
     ]
     
-    # Identitas Perusahaan (Format Sesuai Template)
     info_data = [
         [Paragraph("Nama Perusahaan Supplier / Vendor :", bold_body), Paragraph(f"{nama_vendor}", normal_body),
          Paragraph("Tanggal Pengisian :", bold_body), Paragraph(f"{tgl_update}", normal_body)],
@@ -241,7 +258,6 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     elements.append(Paragraph("<b>2. PERTANYAAN EVALUASI CSMS</b>", section_title))
     elements.append(Spacer(1, 5))
     
-    # Header Tabel Berwarna Blue Navy Sangat Jelas dengan Teks Putih
     table_data = [[
         Paragraph("<b>No</b>", th_style),
         Paragraph("<b>Pertanyaan Evaluasi CSMS</b>", ParagraphStyle('THLeft', parent=th_style, alignment=0)),
@@ -249,7 +265,6 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
         Paragraph("<b>Keterangan Lampiran</b>", ParagraphStyle('THLeft2', parent=th_style, alignment=0))
     ]]
     
-    # FILTER SUPAYA JUDUL KATEGORI HANYA MUNCUL 1X DI AWAL KELOMPOK
     last_kategori = None
     for item in summary_list:
         current_kategori = item['Kategori']
@@ -268,7 +283,7 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
         
     t_questions = Table(table_data, colWidths=[30, 320, 50, 120])
     t_questions.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')), # Navy Blue Header Background
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
         ('PADDING', (0,0), (-1,-1), 4),
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
@@ -441,7 +456,7 @@ if not st.session_state['authenticated'] and url_token:
         st.error(msg)
 
 # ---------------------------------------------------------
-# TAB REGISTRASI & VERIFIKASI AKSES VENDOR (LAYOUT PROFESSIONAL CARD)
+# TAB REGISTRASI & VERIFIKASI AKSES VENDOR
 # ---------------------------------------------------------
 if not st.session_state['authenticated']:
     
@@ -458,11 +473,14 @@ if not st.session_state['authenticated']:
             st.info("💡 **Petunjuk Vendor Baru:** Setelah mendaftar, Anda akan menerima **Link Unik CSMS** yang berlaku selama 7 hari.")
             
             with st.container():
-                reg_vendor_name = st.text_input("🏢 Nama Perusahaan / Supplier / Vendor (Resmi)", placeholder="Contoh: PT. Aneka Jaya Teknik")
-                reg_vendor_email = st.text_input("📧 Email Resmi Perusahaan / PIC HSE", placeholder="Contoh: hse@anekajaya.co.id")
+                reg_vendor_name_raw = st.text_input("🏢 Nama Perusahaan / Supplier / Vendor (Resmi)", placeholder="Contoh: PT. Aneka Jaya Teknik")
+                reg_vendor_email_raw = st.text_input("📧 Email Resmi Perusahaan / PIC HSE", placeholder="Contoh: hse@anekajaya.co.id")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🚀 Daftarkan Perusahaan & Dapatkan Link CSMS", type="primary", use_container_width=True):
+                    reg_vendor_name = sanitize_input(reg_vendor_name_raw)
+                    reg_vendor_email = sanitize_input(reg_vendor_email_raw)
+                    
                     if not reg_vendor_name or not reg_vendor_email:
                         st.error("⚠️ Harap isi Nama Perusahaan dan Email Resmi terlebih dahulu!")
                     else:
@@ -478,7 +496,8 @@ if not st.session_state['authenticated']:
                                     t_sheet = sh.add_worksheet(title="Token_Akses", rows="100", cols="4")
                                     t_sheet.append_row(["Token", "Nama Vendor", "Expired Date", "Status"])
                                 
-                                rand_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+                                # TOKEN ACAK 8 KARAKTER (HIGH SECURITY)
+                                rand_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
                                 new_token = f"K3-{rand_str}"
                                 exp_date = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
                                 
@@ -517,10 +536,11 @@ if not st.session_state['authenticated']:
             st.info("💡 Masukkan Kode Token unik yang telah dikirimkan ke email atau WhatsApp perusahaan Anda.")
             
             with st.container():
-                input_token = st.text_input("🔑 Kode Token Akses CSMS", value=url_token, placeholder="Contoh: K3-X89A2").strip().upper()
+                input_token_raw = st.text_input("🔑 Kode Token Akses CSMS", value=url_token, placeholder="Contoh: K3-X89A2B3C").strip().upper()
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🔓 Verifikasi Token & Buka Formulir CSMS", type="primary", use_container_width=True):
+                    input_token = sanitize_input(input_token_raw)
                     if not input_token:
                         st.error("⚠️ Silakan masukkan Kode Token terlebih dahulu!")
                     else:
@@ -538,18 +558,18 @@ if not st.session_state['authenticated']:
     st.stop()
 
 # ---------------------------------------------------------
-# FORM CSMS (LAYAR VENDOR - PROFESSIONAL LAYOUT)
+# FORM CSMS (LAYAR VENDOR - WITH PDF MAGIC BYTES VALIDATION)
 # ---------------------------------------------------------
 st.success(f"🔑 **Akses Terverifikasi:** `{st.session_state.get('active_token')}` — Perusahaan: **{st.session_state.get('assigned_vendor')}**")
 
 st.markdown("### 1. Identitas Perusahaan")
 col1, col2 = st.columns(2)
 with col1:
-    nama_vendor = st.text_input("🏢 Nama Perusahaan / Supplier / Vendor", value=st.session_state.get('assigned_vendor', ''))
+    nama_vendor_raw = st.text_input("🏢 Nama Perusahaan / Supplier / Vendor", value=st.session_state.get('assigned_vendor', ''))
     tgl_update = st.date_input("📅 Tanggal Pengisian", datetime.date.today())
 with col2:
-    nama_pj = st.text_input("👤 Penanggung Jawab HSE atau Petugas K3L")
-    kontak_vendor = st.text_input("📞 Nomor Telepon / Email Kontak")
+    nama_pj_raw = st.text_input("👤 Penanggung Jawab HSE atau Petugas K3L")
+    kontak_vendor_raw = st.text_input("📞 Nomor Telepon / Email Kontak")
 
 st.divider()
 
@@ -580,10 +600,17 @@ for section in sections:
                 if ans == "Ya":
                     up_file = st.file_uploader(f"📎 {q.get('file_label')} (Format PDF, Maks. 5MB)", type=["pdf"], key=f"file_{q_id}")
                     if up_file:
+                        file_b = up_file.getvalue()
+                        # VALIDASI SECURITY MAGIC BYTES PDF & SIZE 5MB
                         if up_file.size > 5 * 1024 * 1024:
-                            st.error(f"⚠️ File **{up_file.name}** melebihi batas 5MB! Harap unggah file PDF yang lebih kecil.")
+                            st.error(f"⚠️ File **{up_file.name}** melebihi batas 5MB!")
                             uploaded_files_dict[q_id] = None
                             file_status[q_id] = "File Melebihi Batas 5MB"
+                            file_error_flag = True
+                        elif not is_valid_pdf_content(file_b):
+                            st.error(f"🚫 File **{up_file.name}** terdeteksi BUKAN dokumen PDF valid! (Security Error)")
+                            uploaded_files_dict[q_id] = None
+                            file_status[q_id] = "File PDF Tidak Valid"
                             file_error_flag = True
                         else:
                             uploaded_files_dict[q_id] = up_file
@@ -600,13 +627,17 @@ for section in sections:
     st.markdown("---")
 
 # ---------------------------------------------------------
-# PROSES SUBMIT CSMS & PENILAIAN DENGAN PEMBATAS 100%
+# PROSES SUBMIT CSMS
 # ---------------------------------------------------------
 if st.button("Submit Aplikasi CSMS", type="primary", use_container_width=True):
+    nama_vendor = sanitize_input(nama_vendor_raw)
+    nama_pj = sanitize_input(nama_pj_raw)
+    kontak_vendor = sanitize_input(kontak_vendor_raw)
+
     if not nama_vendor:
         st.error("⚠️ Harap isi Nama Perusahaan terlebih dahulu!")
     elif file_error_flag:
-        st.error("⚠️ Ada file lampiran yang melebihi batas ukuran 5MB. Harap periksa dan unggah kembali file yang sesuai.")
+        st.error("⚠️ Ada file lampiran yang tidak valid atau melebihi batas ukuran 5MB. Harap periksa kembali file Anda.")
     else:
         with st.spinner("Menyimpan data CSMS & Mengubah Status Token menjadi Hangus..."):
             try:
