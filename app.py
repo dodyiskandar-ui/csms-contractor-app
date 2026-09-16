@@ -28,7 +28,7 @@ st.set_page_config(
 # Professional Corporate UI Styling
 custom_css = """
 <style>
-    /* 1. Sembunyikan Sidebar Panel Admin */
+    /* 1. Sembunyikan Sidebar Panel Admin secara Total */
     [data-testid="stSidebar"], section[data-testid="stSidebar"] {
         display: none !important;
         width: 0px !important;
@@ -187,18 +187,22 @@ def verify_token_credentials(input_token):
         return False, f"Gagal memverifikasi token: {e}", None, None
 
 # ---------------------------------------------------------
-# FUNGSI GENERATE PDF CSMS
+# FUNGSI GENERATE PDF CSMS (FORMAT HEADER TERKONTROL & SINGLE KATEGORI)
 # ---------------------------------------------------------
 def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct, total_poin, max_poin, summary_list):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=14, leading=18, alignment=1, textColor=colors.HexColor('#1E3A8A'))
-    subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontSize=9, leading=11, alignment=1, textColor=colors.gray)
-    section_title = ParagraphStyle('SecTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, leading=12, textColor=colors.black)
-    bold_body = ParagraphStyle('BoldBody', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
-    normal_body = ParagraphStyle('NormalBody', parent=styles['Normal'], fontSize=8, leading=10)
-    center_body = ParagraphStyle('CenterBody', parent=styles['Normal'], fontSize=8, leading=10, alignment=1)
+    
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=13, leading=17, alignment=1, textColor=colors.HexColor('#1E3A8A'))
+    subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontSize=8.5, leading=11, alignment=1, textColor=colors.HexColor('#4B5563'))
+    section_title = ParagraphStyle('SecTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=12, textColor=colors.HexColor('#1E1B4B'))
+    
+    # Text styles khusus tabel dengan kontras jelas
+    th_style = ParagraphStyle('THStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=1, textColor=colors.white)
+    bold_body = ParagraphStyle('BoldBody', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
+    normal_body = ParagraphStyle('NormalBody', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
+    center_body = ParagraphStyle('CenterBody', parent=styles['Normal'], fontSize=8, leading=10, alignment=1, textColor=colors.HexColor('#1F2937'))
     
     if score_pct >= 70.0:
         kesimpulan_text = "<font color='#166534'><b>Dapat diterima (Lulus CSMS)</b></font>"
@@ -208,12 +212,13 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     elements = [
         Paragraph("HASIL EVALUASI PRAKUALIFIKASI KONTRAKTOR (CSMS)", title_style),
         Paragraph("Contractor Safety Management System - Form Ref: FM/QHE/0127 rev. 2", subtitle_style),
-        Spacer(1, 10),
-        HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=10),
+        Spacer(1, 8),
+        HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1E3A8A'), spaceAfter=8),
         Paragraph("<b>1. IDENTITAS PERUSAHAAN</b>", section_title),
-        Spacer(1, 6)
+        Spacer(1, 5)
     ]
     
+    # Identitas Perusahaan (Format Sesuai Template)
     info_data = [
         [Paragraph("Nama Perusahaan Supplier / Vendor :", bold_body), Paragraph(f"{nama_vendor}", normal_body),
          Paragraph("Tanggal Pengisian :", bold_body), Paragraph(f"{tgl_update}", normal_body)],
@@ -225,40 +230,50 @@ def generate_csms_pdf(nama_vendor, tgl_update, nama_pj, kontak_vendor, score_pct
     
     t_info = Table(info_data, colWidths=[165, 125, 125, 105])
     t_info.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F9FAFB')),
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
         ('PADDING', (0,0), (-1,-1), 5),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
-        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB'))
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0'))
     ]))
     elements.append(t_info)
-    elements.append(Spacer(1, 12))
+    elements.append(Spacer(1, 10))
     elements.append(Paragraph("<b>2. PERTANYAAN EVALUASI CSMS</b>", section_title))
-    elements.append(Spacer(1, 6))
+    elements.append(Spacer(1, 5))
     
+    # Header Tabel Berwarna Blue Navy Sangat Jelas dengan Teks Putih
     table_data = [[
-        Paragraph("<b>No</b>", ParagraphStyle('HCenter', parent=bold_body, alignment=1)),
-        Paragraph("<b>Pertanyaan Evaluasi CSMS</b>", bold_body),
-        Paragraph("<b>Jawaban</b>", ParagraphStyle('HCenter2', parent=bold_body, alignment=1)),
-        Paragraph("<b>Keterangan Lampiran</b>", bold_body)
+        Paragraph("<b>No</b>", th_style),
+        Paragraph("<b>Pertanyaan Evaluasi CSMS</b>", ParagraphStyle('THLeft', parent=th_style, alignment=0)),
+        Paragraph("<b>Jawaban</b>", th_style),
+        Paragraph("<b>Keterangan Lampiran</b>", ParagraphStyle('THLeft2', parent=th_style, alignment=0))
     ]]
     
+    # FILTER SUPAYA JUDUL KATEGORI HANYA MUNCUL 1X DI AWAL KELOMPOK
+    last_kategori = None
     for item in summary_list:
+        current_kategori = item['Kategori']
+        if current_kategori != last_kategori:
+            question_content = f"<b>[{current_kategori}]</b><br/>{item['Pertanyaan']}"
+            last_kategori = current_kategori
+        else:
+            question_content = item['Pertanyaan']
+            
         table_data.append([
             Paragraph(str(item["No"]), center_body),
-            Paragraph(f"<b>[{item['Kategori']}]</b><br/>{item['Pertanyaan']}", normal_body),
+            Paragraph(question_content, normal_body),
             Paragraph(item["Jawaban"], center_body),
             Paragraph(item["Lampiran"], normal_body)
         ])
         
     t_questions = Table(table_data, colWidths=[30, 320, 50, 120])
     t_questions.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')), # Navy Blue Header Background
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
         ('PADDING', (0,0), (-1,-1), 4),
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#9CA3AF')),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F9FAFB')])
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#94A3B8')),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')])
     ]))
     elements.append(t_questions)
     doc.build(elements)
